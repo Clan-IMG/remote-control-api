@@ -23,7 +23,6 @@ from src.app.routes.health import router as health_router
 from src.app.routes.auth import router as auth_router
 from src.app.routes.generations import router as generations_router
 from src.app.routes.gallery import router as gallery_router
-from src.app.routes.prompts import router as prompts_router
 
 
 # ========== Lifespan ==========
@@ -88,6 +87,3 @@ app.include_router(generations_router)
 
 # Public Gallery
 app.include_router(gallery_router)
-
-# Prompt Enhancement
-app.include_router(prompts_router)

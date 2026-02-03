@@ -95,7 +95,6 @@ class GenerationResponse(BaseModel):
     status: RequestStatusEnum
     is_public: bool
     image_url: Optional[str]
-    blockbench_url: Optional[str]  # Actual pixel art for Blockbench download
     error_message: Optional[str]
     processing_time_ms: Optional[int]
     created_at: datetime

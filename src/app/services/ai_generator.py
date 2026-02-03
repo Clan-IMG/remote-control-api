@@ -8,6 +8,7 @@ Supports multiple AI backends:
 
 Each model type has specific prompts optimized for pixel art generation.
 With automatic fallback: Stability → Replicate → OpenAI
+Includes prompt enhancement using GPT-4o-mini for prompt-agent.
 """
 
 import httpx
@@ -27,62 +28,123 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GenerationResult:
     success: bool
-    image_data: Optional[bytes] = None  # The actual pixel art (16x16, 32x32, etc.)
-    preview_data: Optional[bytes] = None  # Upscaled preview for display (512x512)
+    image_data: Optional[bytes] = None
     error_message: Optional[str] = None
     processing_time_ms: Optional[int] = None
     provider_used: Optional[str] = None
+    enhanced_prompt: Optional[str] = None
 
 
 # SDXL allowed dimensions (must use these for Stability AI)
 SDXL_DIMENSIONS = (1024, 1024)
 
-# Model-specific prompt templates - OPTIMIZED FOR 2D FLAT TEXTURES
+# Prompt enhancement system prompt
+PROMPT_ENHANCEMENT_SYSTEM = """You are an expert at creating detailed, high-quality prompts for AI image generation, specifically for Minecraft-style 16-bit pixel art.
+
+Your task is to take a simple user prompt and enhance it into a detailed, descriptive prompt that will generate beautiful pixel art.
+
+Guidelines:
+- Keep the Minecraft/pixel art style focus
+- Add specific details about colors, lighting, composition
+- Mention pixel art techniques: clean edges, flat colors, no gradients, crisp pixels
+- Keep it concise but descriptive (max 100 words)
+- Always include: "16-bit pixel art, Minecraft style, clean pixels, flat colors"
+- Do NOT add any explanations, just output the enhanced prompt
+
+Example:
+User: "a blue sword"
+Enhanced: "16-bit pixel art Minecraft diamond sword, brilliant blue crystalline blade with cyan highlights, dark iron handle with leather grip details, magical sparkle particles, clean pixel edges, flat colors, game item icon style, isolated on transparent background"
+"""
+
+# Model-specific prompt templates
 MODEL_PROMPTS = {
     ModelType.BLOCK_AGENT: {
-        "base": "minecraft texture, flat 2D square texture, pixel art, 16x16 pixel grid, "
-                "{user_prompt}, single flat surface, NO 3D, NO perspective, NO cube, NO block shape, "
-                "seamless tileable, limited color palette, crisp pixel edges, retro game texture, "
-                "top-down view of one face only, solid colors, no gradients, no shading",
-        "negative": "3d, cube, block, perspective, isometric, depth, shadow, shading, gradient, "
-                   "blurry, realistic, photo, render, multiple sides, corner, edge view, "
-                   "anti-aliasing, smooth, text, watermark, complex, detailed",
-        "steps": 35,
-        "cfg_scale": 9
+        "base": "minecraft block texture, 2D front view, flat design, 16-bit pixel art style, "
+                "seamless tileable texture, {user_prompt}, clean edges, no gradients, "
+                "game asset, isolated on transparent background",
+        "negative": "3d, perspective, shading, gradient, blurry, noise, realistic, photo, "
+                   "complex details, text, watermark, signature",
+        "steps": 30,
+        "cfg_scale": 7,
+        "enhance_prompt": False
     },
     ModelType.ITEM_AGENT: {
-        "base": "minecraft item sprite, flat 2D pixel art icon, 16x16 pixel grid, "
-                "{user_prompt}, game inventory icon, NO 3D, NO perspective, NO depth, "
-                "flat colors, clean pixel edges, limited palette, retro game sprite, "
-                "centered item on transparent background, crisp pixels",
-        "negative": "3d, perspective, depth, shadow, shading, gradient, blurry, realistic, "
-                   "photo, render, anti-aliasing, smooth, text, watermark, complex background",
-        "steps": 35,
-        "cfg_scale": 9
+        "base": "minecraft item icon, 2D top-down isometric view, 16-bit pixel art style, "
+                "{user_prompt}, clean pixel edges, flat colors, game inventory icon, "
+                "isolated on transparent background, no shadow",
+        "negative": "3d render, realistic, photo, blurry, noise, gradient shading, "
+                   "complex background, text, watermark",
+        "steps": 30,
+        "cfg_scale": 7,
+        "enhance_prompt": False
     },
     ModelType.ARMOR_AGENT: {
-        "base": "minecraft armor texture, flat 2D sprite sheet style, pixel art, "
-                "{user_prompt}, NO 3D, NO perspective, flat design, limited color palette, "
-                "clean pixel edges, game character equipment sprite, front facing flat view",
-        "negative": "3d, perspective, depth, shadow, shading, gradient, blurry, realistic, "
-                   "photo, render, anti-aliasing, smooth, text, watermark, worn by character",
-        "steps": 35,
-        "cfg_scale": 9
+        "base": "minecraft armor piece, pixel art sprite, 16-bit style, {user_prompt}, "
+                "front facing, flat colors, clean edges, game character equipment, "
+                "isolated on transparent background",
+        "negative": "3d, realistic, photo, gradient, blur, complex details, "
+                   "text, watermark, background scenery",
+        "steps": 30,
+        "cfg_scale": 7,
+        "enhance_prompt": False
     },
     ModelType.PROMPT_AGENT: {
-        "base": "pixel art, 16-bit retro game style, {user_prompt}, flat 2D, "
-                "clean crisp pixels, limited color palette, no anti-aliasing, no gradients",
-        "negative": "3d, blurry, gradient, realistic, smooth, anti-aliasing, noisy, complex",
+        "base": "{user_prompt}",  # Uses enhanced prompt directly
+        "negative": "blurry, gradient, realistic, 3d, complex, noisy, low quality, jpeg artifacts",
         "steps": 35,
-        "cfg_scale": 8
+        "cfg_scale": 8,
+        "enhance_prompt": True  # Use GPT to enhance the prompt
     },
     ModelType.CUSTOM: {
         "base": "{user_prompt}",
         "negative": "blurry, noise, low quality",
         "steps": 30,
-        "cfg_scale": 7
+        "cfg_scale": 7,
+        "enhance_prompt": False
     }
 }
+
+
+async def enhance_prompt_with_gpt(user_prompt: str) -> str:
+    """
+    Use GPT-4o-mini to enhance a simple prompt into a detailed pixel art prompt.
+    This is cheap and fast (~$0.00015 per request).
+    """
+    if not OPENAI_API_KEY:
+        logger.warning("OpenAI API key not configured, skipping prompt enhancement")
+        return user_prompt
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "gpt-4o-mini",  # Super cheap: $0.15/1M input, $0.60/1M output
+                    "messages": [
+                        {"role": "system", "content": PROMPT_ENHANCEMENT_SYSTEM},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "max_tokens": 200,
+                    "temperature": 0.7
+                }
+            )
+            
+            if response.status_code != 200:
+                logger.warning(f"GPT prompt enhancement failed: {response.text}")
+                return user_prompt
+            
+            data = response.json()
+            enhanced = data["choices"][0]["message"]["content"].strip()
+            logger.info(f"Enhanced prompt: '{user_prompt}' → '{enhanced[:100]}...'")
+            return enhanced
+            
+    except Exception as e:
+        logger.error(f"Prompt enhancement error: {e}")
+        return user_prompt
 
 
 def build_prompt(model_type: ModelType, user_prompt: str) -> tuple[str, str]:
@@ -99,12 +161,10 @@ def parse_size(size_str: str) -> tuple[int, int]:
     return int(parts[0]), int(parts[1])
 
 
-def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: int, model_type: str = "prompt-agent") -> bytes:
+def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: int) -> bytes:
     """
-    Process image for pixel art output.
-    Creates a REAL pixel art image at the target size using NEAREST neighbor.
-    
-    This produces actual 16x16, 32x32, 64x64 etc. pixel images that work in Blockbench.
+    Downscale image to target pixel size using nearest neighbor resampling.
+    This preserves the crisp pixel art look.
     """
     img = Image.open(io.BytesIO(image_data))
     
@@ -112,40 +172,12 @@ def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: 
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     
-    # For Minecraft textures, we want ACTUAL pixel dimensions
-    # Use NEAREST neighbor resampling for crisp pixel art look
-    target_size = (target_width, target_height)
-    
-    # Resize using NEAREST for that authentic pixel art look
-    img_resized = img.resize(target_size, Image.Resampling.NEAREST)
+    # Downscale using NEAREST to keep pixel art crisp
+    img_small = img.resize((target_width, target_height), Image.Resampling.NEAREST)
     
     # Save to bytes
     output = io.BytesIO()
-    img_resized.save(output, format="PNG", optimize=True)
-    return output.getvalue()
-
-
-def create_preview_image(image_data: bytes, model_type: str = "prompt-agent") -> bytes:
-    """
-    Create a larger preview image for display purposes.
-    The preview is upscaled from the pixel art version for consistent display.
-    """
-    img = Image.open(io.BytesIO(image_data))
-    
-    # Convert to RGBA if needed
-    if img.mode != "RGBA":
-        img = img.convert("RGBA")
-    
-    # Create a larger preview using NEAREST to maintain pixel art aesthetic
-    if model_type in ["block-agent", "item-agent", "armor-agent"]:
-        preview_size = (512, 512)  # 16x16 → 512x512 = 32x upscale
-    else:
-        preview_size = (512, 512)
-    
-    img_preview = img.resize(preview_size, Image.Resampling.NEAREST)
-    
-    output = io.BytesIO()
-    img_preview.save(output, format="PNG", optimize=True)
+    img_small.save(output, format="PNG")
     return output.getvalue()
 
 
@@ -310,9 +342,10 @@ async def generate_pixel_art(
 ) -> GenerationResult:
     """
     Main generation function.
-    1. Build appropriate prompt based on model type
-    2. Generate at higher resolution
-    3. Downscale to target pixel size
+    1. Enhance prompt with GPT if using prompt-agent
+    2. Build appropriate prompt based on model type
+    3. Generate at higher resolution
+    4. Downscale to target pixel size
     """
     import time
     start_time = time.time()
@@ -320,14 +353,23 @@ async def generate_pixel_art(
     # Get template settings
     template = MODEL_PROMPTS.get(model_type, MODEL_PROMPTS[ModelType.CUSTOM])
     
+    # Enhance prompt with GPT for prompt-agent
+    enhanced_prompt = None
+    working_prompt = user_prompt
+    if template.get("enhance_prompt", False):
+        logger.info(f"Enhancing prompt with GPT: '{user_prompt}'")
+        enhanced_prompt = await enhance_prompt_with_gpt(user_prompt)
+        working_prompt = enhanced_prompt
+    
     # Build prompts
-    full_prompt, negative_prompt = build_prompt(model_type, user_prompt)
+    full_prompt, negative_prompt = build_prompt(model_type, working_prompt)
     
     # Parse target size
     target_width, target_height = parse_size(target_size)
     
     # Track errors from each provider for debugging
     errors = []
+    result = GenerationResult(success=False)
     
     # Try Stability AI first
     if STABILITY_API_KEY:
@@ -344,7 +386,6 @@ async def generate_pixel_art(
             errors.append(f"Stability: {result.error_message}")
             logger.warning(f"Stability AI failed: {result.error_message}")
     else:
-        result = GenerationResult(success=False, error_message="No API key")
         errors.append("Stability: No API key configured")
     
     # Fallback to Replicate
@@ -375,32 +416,22 @@ async def generate_pixel_art(
         combined_error = " | ".join(errors) if errors else "No AI providers configured"
         return GenerationResult(success=False, error_message=combined_error)
     
-    # Process image to appropriate size
+    # Downscale to pixel art size
     try:
-        model_type_str = model_type.value if hasattr(model_type, 'value') else str(model_type)
-        
-        # Create the actual pixel art image (16x16, 32x32, etc.)
         pixel_art_data = downscale_to_pixel_art(
             result.image_data,
             target_width,
-            target_height,
-            model_type_str
-        )
-        
-        # Create a larger preview image for display (upscaled from pixel art)
-        preview_data = create_preview_image(
-            pixel_art_data,
-            model_type_str
+            target_height
         )
         
         processing_time = int((time.time() - start_time) * 1000)
         
         return GenerationResult(
             success=True,
-            image_data=pixel_art_data,  # Actual 16x16 for Blockbench
-            preview_data=preview_data,  # 512x512 for display
+            image_data=pixel_art_data,
             processing_time_ms=processing_time,
-            provider_used=result.provider_used
+            provider_used=result.provider_used,
+            enhanced_prompt=enhanced_prompt
         )
     except Exception as e:
         return GenerationResult(success=False, error_message=f"Image processing error: {str(e)}")

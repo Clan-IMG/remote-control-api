@@ -4,6 +4,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from pydantic import BaseModel
 from src.app.database import get_db
 from src.app.redis_client import get_redis, QUEUE_PENDING, KEY_REQUEST_PREFIX
 from src.app.models import User, Generation, ModelType, RequestStatus
@@ -11,8 +12,34 @@ from src.app.schemas import (
     GenerationRequest, GenerationResponse, GenerationQueueResponse, GenerationListResponse
 )
 from src.app.dependencies import get_current_user
+from src.app.services.ai_generator import enhance_prompt_with_gpt
 
 router = APIRouter(prefix="/v1/responses", tags=["Generations"])
+
+
+class EnhancePromptRequest(BaseModel):
+    prompt: str
+
+
+class EnhancePromptResponse(BaseModel):
+    original: str
+    enhanced: str
+
+
+@router.post("/enhance-prompt", response_model=EnhancePromptResponse)
+async def enhance_prompt(
+    request: EnhancePromptRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Enhance a simple prompt using GPT-4o-mini.
+    Returns the enhanced prompt optimized for pixel art generation.
+    """
+    enhanced = await enhance_prompt_with_gpt(request.prompt)
+    return EnhancePromptResponse(
+        original=request.prompt,
+        enhanced=enhanced
+    )
 
 
 @router.post("", response_model=GenerationQueueResponse, status_code=status.HTTP_202_ACCEPTED)

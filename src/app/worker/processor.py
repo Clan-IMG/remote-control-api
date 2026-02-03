@@ -31,16 +31,12 @@ logger = logging.getLogger(__name__)
 CONTAINER_ID = os.getenv("CONTAINER_ID", f"worker-{uuid.uuid4().hex[:8]}")
 
 
-async def save_image(image_data: bytes, generation_id: str, suffix: str = "") -> tuple[str, str]:
+async def save_image(image_data: bytes, generation_id: str) -> tuple[str, str]:
     """
     Save image to storage and return URLs.
-    Args:
-        image_data: The image bytes
-        generation_id: Unique ID for the generation
-        suffix: Optional suffix for filename (e.g., "_preview")
     Returns (image_url, thumbnail_url)
     """
-    filename = f"{generation_id}{suffix}.png"
+    filename = f"{generation_id}.png"
     
     # If S3 is configured, upload there
     if S3_BUCKET and S3_ACCESS_KEY:
@@ -107,25 +103,16 @@ async def process_generation(request_data: dict) -> bool:
             )
             
             if result.success:
-                # Save the preview image (512x512 for display)
-                preview_url, _ = await save_image(
-                    result.preview_data or result.image_data, 
-                    generation_id,
-                    "_preview"
-                )
-                
-                # Save the actual pixel art (16x16, 32x32, etc. for Blockbench)
-                blockbench_url, _ = await save_image(
+                # Save image
+                image_url, thumbnail_url = await save_image(
                     result.image_data, 
-                    generation_id,
-                    ""  # No suffix for the original pixel art
+                    generation_id
                 )
                 
                 # Update database
                 generation.status = RequestStatus.COMPLETED
-                generation.image_url = preview_url  # Preview for display
-                generation.thumbnail_url = preview_url
-                generation.blockbench_url = blockbench_url  # Actual pixel art for Blockbench
+                generation.image_url = image_url
+                generation.thumbnail_url = thumbnail_url
                 generation.processing_time_ms = result.processing_time_ms
                 generation.completed_at = datetime.utcnow()
                 
