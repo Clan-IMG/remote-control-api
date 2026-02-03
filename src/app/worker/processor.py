@@ -190,22 +190,22 @@ async def worker_loop():
             await redis.hset(KEY_CONTAINER_LOAD, CONTAINER_ID, str(load_pct))
             
             # Process in background
-            async def process_and_cleanup():
+            async def process_and_cleanup(req_id: str, req_data: dict):
                 nonlocal active_tasks
                 try:
-                    success = await process_generation(request_data)
+                    success = await process_generation(req_data)
                     
                     # Move to completed/failed queue
                     target_queue = QUEUE_COMPLETED if success else QUEUE_FAILED
-                    await redis.lrem(QUEUE_PROCESSING, 1, request_id)
-                    await redis.lpush(target_queue, request_id)
+                    await redis.lrem(QUEUE_PROCESSING, 1, req_id)
+                    await redis.lpush(target_queue, req_id)
                     
                 finally:
                     active_tasks -= 1
                     load_pct = int((active_tasks / MAX_CONCURRENT_WORKERS) * 100)
                     await redis.hset(KEY_CONTAINER_LOAD, CONTAINER_ID, str(load_pct))
             
-            asyncio.create_task(process_and_cleanup())
+            asyncio.create_task(process_and_cleanup(request_id, request_data))
             
     except asyncio.CancelledError:
         logger.info(f"Worker {CONTAINER_ID} shutting down...")
