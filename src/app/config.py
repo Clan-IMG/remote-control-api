@@ -25,7 +25,8 @@ MAXIMUM_REQUESTS = int(os.getenv("MAXIMUM_REQUESTS", 200))  # Pro Container
 MAX_CONCURRENT_WORKERS = int(os.getenv("MAX_CONCURRENT_WORKERS", 2))
 
 # ========== AI Configuration ==========
-STABILITY_API_KEY = os.getenv("STABILITY_API_KEY", "")
+# Multiple API keys can be provided separated by comma for redundancy
+STABILITY_API_KEYS = [key.strip() for key in os.getenv("STABILITY_API_KEY", "").split(",") if key.strip()]
 REPLICATE_API_KEY = os.getenv("REPLICATE_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 

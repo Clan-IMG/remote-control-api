@@ -21,7 +21,7 @@ from pathlib import Path
 from PIL import Image
 from typing import Optional
 from dataclasses import dataclass
-from src.app.config import STABILITY_API_KEY, REPLICATE_API_KEY, OPENAI_API_KEY
+from src.app.config import STABILITY_API_KEYS, REPLICATE_API_KEY, OPENAI_API_KEY
 from src.app.models import ModelType
 
 logger = logging.getLogger(__name__)
@@ -149,46 +149,64 @@ async def generate_with_stability(
     steps: int = 30,
     cfg_scale: float = 7
 ) -> GenerationResult:
-    """Generate image using Stability AI API with SDXL (1024x1024)"""
-    if not STABILITY_API_KEY:
+    """Generate image using Stability AI API with SDXL (1024x1024). Tries multiple API keys if available."""
+    if not STABILITY_API_KEYS:
         return GenerationResult(success=False, error_message="Stability API key not configured")
     
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
-                headers={
-                    "Authorization": f"Bearer {STABILITY_API_KEY}",
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
-                },
-                json={
-                    "text_prompts": [
-                        {"text": prompt, "weight": 1},
-                        {"text": negative_prompt, "weight": -1}
-                    ],
-                    "cfg_scale": cfg_scale,
-                    "width": SDXL_DIMENSIONS[0],  # Must be 1024
-                    "height": SDXL_DIMENSIONS[1],  # Must be 1024
-                    "steps": steps,
-                    "samples": 1
-                }
-            )
+    last_error = None
+    
+    # Try each API key
+    for i, api_key in enumerate(STABILITY_API_KEYS):
+        try:
+            logger.info(f"Trying Stability API key {i + 1}/{len(STABILITY_API_KEYS)}...")
             
-            if response.status_code != 200:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    json={
+                        "text_prompts": [
+                            {"text": prompt, "weight": 1},
+                            {"text": negative_prompt, "weight": -1}
+                        ],
+                        "cfg_scale": cfg_scale,
+                        "width": SDXL_DIMENSIONS[0],  # Must be 1024
+                        "height": SDXL_DIMENSIONS[1],  # Must be 1024
+                        "steps": steps,
+                        "samples": 1
+                    }
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    image_b64 = data["artifacts"][0]["base64"]
+                    image_data = base64.b64decode(image_b64)
+                    
+                    logger.info(f"Stability API key {i + 1} succeeded")
+                    return GenerationResult(success=True, image_data=image_data, provider_used="stability")
+                
+                # Check if it's a balance error
                 error_msg = f"Stability API error: {response.text}"
-                logger.warning(error_msg)
-                return GenerationResult(success=False, error_message=error_msg)
-            
-            data = response.json()
-            image_b64 = data["artifacts"][0]["base64"]
-            image_data = base64.b64decode(image_b64)
-            
-            return GenerationResult(success=True, image_data=image_data, provider_used="stability")
-            
-    except Exception as e:
-        logger.error(f"Stability AI exception: {e}")
-        return GenerationResult(success=False, error_message=str(e))
+                last_error = error_msg
+                
+                if response.status_code == 429:
+                    logger.warning(f"Stability API key {i + 1} failed (insufficient balance or rate limit): {response.text}")
+                    continue  # Try next key
+                else:
+                    logger.warning(error_msg)
+                    return GenerationResult(success=False, error_message=error_msg)
+                
+        except Exception as e:
+            last_error = str(e)
+            logger.error(f"Stability AI key {i + 1} exception: {e}")
+            continue  # Try next key
+    
+    # All keys failed
+    return GenerationResult(success=False, error_message=last_error or "All Stability API keys failed")
 
 
 async def generate_with_replicate(
