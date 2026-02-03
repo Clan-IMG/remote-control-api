@@ -1,0 +1,146 @@
+services:
+  # Main API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pixelkid-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=mysql+aiomysql://pixelkid:${DB_PASSWORD}@db:3306/pixelkid
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,https://pixelkid.app}
+      - STABILITY_API_KEY=${STABILITY_API_KEY}
+      - REPLICATE_API_KEY=${REPLICATE_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - MIN_CONTAINERS=${MIN_CONTAINERS:-2}
+      - MAX_CONTAINERS=${MAX_CONTAINERS:-3}
+      - SCALING_THRESHOLD=${SCALING_THRESHOLD:-75}
+      - MAXIMUM_REQUESTS=${MAXIMUM_REQUESTS:-200}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pixelkid-network
+    volumes:
+      - uploads:/app/uploads
+    restart: unless-stopped
+
+  # Worker containers (initial)
+  worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: pixelkid-worker-1
+    environment:
+      - CONTAINER_ID=worker-1
+      - DATABASE_URL=mysql+aiomysql://pixelkid:${DB_PASSWORD}@db:3306/pixelkid
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - STABILITY_API_KEY=${STABILITY_API_KEY}
+      - REPLICATE_API_KEY=${REPLICATE_API_KEY}
+      - MAX_CONCURRENT_WORKERS=${MAX_CONCURRENT_WORKERS:-2}
+    depends_on:
+      - api
+    networks:
+      - pixelkid-network
+    volumes:
+      - uploads:/app/uploads
+    restart: unless-stopped
+
+  worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: pixelkid-worker-2
+    environment:
+      - CONTAINER_ID=worker-2
+      - DATABASE_URL=mysql+aiomysql://pixelkid:${DB_PASSWORD}@db:3306/pixelkid
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - STABILITY_API_KEY=${STABILITY_API_KEY}
+      - REPLICATE_API_KEY=${REPLICATE_API_KEY}
+      - MAX_CONCURRENT_WORKERS=${MAX_CONCURRENT_WORKERS:-2}
+    depends_on:
+      - api
+    networks:
+      - pixelkid-network
+    volumes:
+      - uploads:/app/uploads
+    restart: unless-stopped
+
+  # Container Scaler (auto-scales workers)
+  scaler:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: pixelkid-scaler
+    command: ["python", "-m", "src.app.worker.scaler"]
+    environment:
+      - DATABASE_URL=mysql+aiomysql://pixelkid:${DB_PASSWORD}@db:3306/pixelkid
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MIN_CONTAINERS=${MIN_CONTAINERS:-2}
+      - MAX_CONTAINERS=${MAX_CONTAINERS:-3}
+      - SCALING_THRESHOLD=${SCALING_THRESHOLD:-75}
+      - MAXIMUM_REQUESTS=${MAXIMUM_REQUESTS:-200}
+    depends_on:
+      - api
+    networks:
+      - pixelkid-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  # MySQL Database
+  db:
+    image: mysql:8.0
+    container_name: pixelkid-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-rootpassword}
+      - MYSQL_DATABASE=pixelkid
+      - MYSQL_USER=pixelkid
+      - MYSQL_PASSWORD=${DB_PASSWORD:-pixelkid123}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - pixelkid-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Queue
+  redis:
+    image: redis:7-alpine
+    container_name: pixelkid-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - pixelkid-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  pixelkid-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
+  uploads:

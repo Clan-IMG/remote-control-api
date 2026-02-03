@@ -1,0 +1,253 @@
+import json
+import uuid
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from src.app.database import get_db
+from src.app.redis_client import get_redis, QUEUE_PENDING, KEY_REQUEST_PREFIX
+from src.app.models import User, Generation, ModelType, RequestStatus
+from src.app.schemas import (
+    GenerationRequest, GenerationResponse, GenerationQueueResponse, GenerationListResponse
+)
+from src.app.dependencies import get_current_user
+
+router = APIRouter(prefix="/v1/responses", tags=["Generations"])
+
+
+@router.post("", response_model=GenerationQueueResponse, status_code=status.HTTP_202_ACCEPTED)
+async def create_generation(
+    request: GenerationRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create a new image generation request.
+    The request will be queued and processed by worker containers.
+    """
+    redis = await get_redis()
+    
+    # Create generation record
+    generation = Generation(
+        user_id=current_user.id,
+        model=ModelType(request.model.value),
+        prompt=request.input,
+        size=request.size,
+        is_public=request.is_public,
+        status=RequestStatus.PENDING
+    )
+    db.add(generation)
+    await db.commit()
+    await db.refresh(generation)
+    
+    # Add to Redis queue
+    queue_data = {
+        "id": generation.id,
+        "user_id": current_user.id,
+        "model": request.model.value,
+        "prompt": request.input,
+        "size": request.size,
+        "is_public": request.is_public,
+        "created_at": datetime.utcnow().isoformat()
+    }
+    
+    # Store request data
+    await redis.set(
+        f"{KEY_REQUEST_PREFIX}{generation.id}",
+        json.dumps(queue_data),
+        ex=3600  # 1 hour TTL
+    )
+    
+    # Add to pending queue
+    await redis.lpush(QUEUE_PENDING, generation.id)
+    
+    # Get queue position
+    queue_length = await redis.llen(QUEUE_PENDING)
+    
+    # Estimate wait time (rough: 10 seconds per request)
+    estimated_wait = queue_length * 10
+    
+    return GenerationQueueResponse(
+        id=generation.id,
+        status=RequestStatus.PENDING,
+        position_in_queue=queue_length,
+        estimated_wait_seconds=estimated_wait
+    )
+
+
+@router.get("/{generation_id}", response_model=GenerationResponse)
+async def get_generation(
+    generation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get a specific generation by ID"""
+    result = await db.execute(
+        select(Generation)
+        .where(Generation.id == generation_id)
+        .where(Generation.user_id == current_user.id)
+    )
+    generation = result.scalar_one_or_none()
+    
+    if not generation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Generation not found"
+        )
+    
+    return GenerationResponse(
+        id=generation.id,
+        model=generation.model.value,
+        prompt=generation.prompt,
+        size=generation.size,
+        status=generation.status,
+        is_public=generation.is_public,
+        image_url=generation.image_url,
+        error_message=generation.error_message,
+        processing_time_ms=generation.processing_time_ms,
+        created_at=generation.created_at,
+        completed_at=generation.completed_at
+    )
+
+
+@router.get("/{generation_id}/status", response_model=GenerationQueueResponse)
+async def get_generation_status(
+    generation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get the current status and queue position of a generation"""
+    redis = await get_redis()
+    
+    result = await db.execute(
+        select(Generation)
+        .where(Generation.id == generation_id)
+        .where(Generation.user_id == current_user.id)
+    )
+    generation = result.scalar_one_or_none()
+    
+    if not generation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Generation not found"
+        )
+    
+    position = None
+    estimated_wait = None
+    
+    if generation.status == RequestStatus.PENDING:
+        # Get position in queue
+        queue = await redis.lrange(QUEUE_PENDING, 0, -1)
+        try:
+            position = queue.index(generation_id) + 1
+            estimated_wait = position * 10
+        except ValueError:
+            position = None
+    
+    return GenerationQueueResponse(
+        id=generation.id,
+        status=generation.status,
+        position_in_queue=position,
+        estimated_wait_seconds=estimated_wait
+    )
+
+
+@router.get("", response_model=GenerationListResponse)
+async def list_generations(
+    page: int = 1,
+    per_page: int = 20,
+    status_filter: RequestStatus = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all generations for the current user"""
+    query = select(Generation).where(Generation.user_id == current_user.id)
+    
+    if status_filter:
+        query = query.where(Generation.status == status_filter)
+    
+    # Get total count
+    count_query = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_query)).scalar()
+    
+    # Get paginated results
+    query = query.order_by(Generation.created_at.desc())
+    query = query.offset((page - 1) * per_page).limit(per_page)
+    
+    result = await db.execute(query)
+    generations = result.scalars().all()
+    
+    items = [
+        GenerationResponse(
+            id=g.id,
+            model=g.model.value,
+            prompt=g.prompt,
+            size=g.size,
+            status=g.status,
+            is_public=g.is_public,
+            image_url=g.image_url,
+            error_message=g.error_message,
+            processing_time_ms=g.processing_time_ms,
+            created_at=g.created_at,
+            completed_at=g.completed_at
+        )
+        for g in generations
+    ]
+    
+    return GenerationListResponse(
+        items=items,
+        total=total,
+        page=page,
+        per_page=per_page
+    )
+
+
+@router.patch("/{generation_id}/visibility")
+async def update_visibility(
+    generation_id: str,
+    is_public: bool,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update the public/private visibility of a generation"""
+    result = await db.execute(
+        select(Generation)
+        .where(Generation.id == generation_id)
+        .where(Generation.user_id == current_user.id)
+    )
+    generation = result.scalar_one_or_none()
+    
+    if not generation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Generation not found"
+        )
+    
+    generation.is_public = is_public
+    await db.commit()
+    
+    return {"success": True, "is_public": is_public}
+
+
+@router.delete("/{generation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_generation(
+    generation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a generation"""
+    result = await db.execute(
+        select(Generation)
+        .where(Generation.id == generation_id)
+        .where(Generation.user_id == current_user.id)
+    )
+    generation = result.scalar_one_or_none()
+    
+    if not generation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Generation not found"
+        )
+    
+    await db.delete(generation)
+    await db.commit()
