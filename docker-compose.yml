@@ -76,28 +76,30 @@ services:
       - uploads:/app/uploads
     restart: unless-stopped
 
-  # Container Scaler (auto-scales workers)
-  scaler:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    container_name: pixelkid-scaler
-    command: ["python", "-m", "src.app.worker.scaler"]
-    environment:
-      - DATABASE_URL=mysql+aiomysql://pixelkid:${DB_PASSWORD}@db:3306/pixelkid
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - MIN_CONTAINERS=${MIN_CONTAINERS:-2}
-      - MAX_CONTAINERS=${MAX_CONTAINERS:-3}
-      - SCALING_THRESHOLD=${SCALING_THRESHOLD:-75}
-      - MAXIMUM_REQUESTS=${MAXIMUM_REQUESTS:-200}
-    depends_on:
-      - api
-    networks:
-      - pixelkid-network
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    restart: unless-stopped
+  # Container Scaler - DEAKTIVIERT für Coolify
+  # Der Scaler braucht Docker-Socket-Zugriff, was in managed Umgebungen nicht möglich ist.
+  # Für manuelle Skalierung: Container-Replicas in Coolify konfigurieren.
+  # scaler:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.worker
+  #   container_name: pixelkid-scaler
+  #   command: ["python", "-m", "src.app.worker.scaler"]
+  #   environment:
+  #     - DATABASE_URL=mysql+aiomysql://pixelkid:${DB_PASSWORD}@db:3306/pixelkid
+  #     - REDIS_HOST=redis
+  #     - REDIS_PORT=6379
+  #     - MIN_CONTAINERS=${MIN_CONTAINERS:-2}
+  #     - MAX_CONTAINERS=${MAX_CONTAINERS:-3}
+  #     - SCALING_THRESHOLD=${SCALING_THRESHOLD:-75}
+  #     - MAXIMUM_REQUESTS=${MAXIMUM_REQUESTS:-200}
+  #   depends_on:
+  #     - api
+  #   networks:
+  #     - pixelkid-network
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   restart: unless-stopped
 
   # MySQL Database
   db:
