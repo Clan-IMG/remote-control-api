@@ -4,19 +4,24 @@ AI Generation Services for PixelKid
 Supports multiple AI backends:
 - Stability AI (Stable Diffusion)
 - Replicate
-- Local Stable Diffusion
+- OpenAI (DALL-E)
 
 Each model type has specific prompts optimized for pixel art generation.
+With automatic fallback: Stability → Replicate → OpenAI
 """
 
 import httpx
 import base64
 import io
+import asyncio
+import logging
 from PIL import Image
 from typing import Optional
 from dataclasses import dataclass
-from src.app.config import STABILITY_API_KEY, REPLICATE_API_KEY
+from src.app.config import STABILITY_API_KEY, REPLICATE_API_KEY, OPENAI_API_KEY
 from src.app.models import ModelType
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,7 +30,11 @@ class GenerationResult:
     image_data: Optional[bytes] = None
     error_message: Optional[str] = None
     processing_time_ms: Optional[int] = None
+    provider_used: Optional[str] = None
 
+
+# SDXL allowed dimensions (must use these for Stability AI)
+SDXL_DIMENSIONS = (1024, 1024)
 
 # Model-specific prompt templates
 MODEL_PROMPTS = {
@@ -35,8 +44,6 @@ MODEL_PROMPTS = {
                 "game asset, isolated on transparent background",
         "negative": "3d, perspective, shading, gradient, blurry, noise, realistic, photo, "
                    "complex details, text, watermark, signature",
-        "width": 256,
-        "height": 256,
         "steps": 30,
         "cfg_scale": 7
     },
@@ -46,8 +53,6 @@ MODEL_PROMPTS = {
                 "isolated on transparent background, no shadow",
         "negative": "3d render, realistic, photo, blurry, noise, gradient shading, "
                    "complex background, text, watermark",
-        "width": 256,
-        "height": 256,
         "steps": 30,
         "cfg_scale": 7
     },
@@ -57,8 +62,6 @@ MODEL_PROMPTS = {
                 "isolated on transparent background",
         "negative": "3d, realistic, photo, gradient, blur, complex details, "
                    "text, watermark, background scenery",
-        "width": 256,
-        "height": 256,
         "steps": 30,
         "cfg_scale": 7
     },
@@ -66,16 +69,12 @@ MODEL_PROMPTS = {
         "base": "16-bit pixel art, retro game style, {user_prompt}, clean pixels, "
                 "flat colors, no anti-aliasing, crisp edges",
         "negative": "blurry, gradient, realistic, 3d, complex, noisy",
-        "width": 512,
-        "height": 512,
         "steps": 35,
         "cfg_scale": 8
     },
     ModelType.CUSTOM: {
         "base": "{user_prompt}",
         "negative": "blurry, noise, low quality",
-        "width": 512,
-        "height": 512,
         "steps": 30,
         "cfg_scale": 7
     }
@@ -119,12 +118,10 @@ def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: 
 async def generate_with_stability(
     prompt: str,
     negative_prompt: str,
-    width: int = 256,
-    height: int = 256,
     steps: int = 30,
     cfg_scale: float = 7
 ) -> GenerationResult:
-    """Generate image using Stability AI API"""
+    """Generate image using Stability AI API with SDXL (1024x1024)"""
     if not STABILITY_API_KEY:
         return GenerationResult(success=False, error_message="Stability API key not configured")
     
@@ -143,36 +140,34 @@ async def generate_with_stability(
                         {"text": negative_prompt, "weight": -1}
                     ],
                     "cfg_scale": cfg_scale,
-                    "width": width,
-                    "height": height,
+                    "width": SDXL_DIMENSIONS[0],  # Must be 1024
+                    "height": SDXL_DIMENSIONS[1],  # Must be 1024
                     "steps": steps,
                     "samples": 1
                 }
             )
             
             if response.status_code != 200:
-                return GenerationResult(
-                    success=False, 
-                    error_message=f"Stability API error: {response.text}"
-                )
+                error_msg = f"Stability API error: {response.text}"
+                logger.warning(error_msg)
+                return GenerationResult(success=False, error_message=error_msg)
             
             data = response.json()
             image_b64 = data["artifacts"][0]["base64"]
             image_data = base64.b64decode(image_b64)
             
-            return GenerationResult(success=True, image_data=image_data)
+            return GenerationResult(success=True, image_data=image_data, provider_used="stability")
             
     except Exception as e:
+        logger.error(f"Stability AI exception: {e}")
         return GenerationResult(success=False, error_message=str(e))
 
 
 async def generate_with_replicate(
     prompt: str,
-    negative_prompt: str,
-    width: int = 256,
-    height: int = 256
+    negative_prompt: str
 ) -> GenerationResult:
-    """Generate image using Replicate API"""
+    """Generate image using Replicate API (SDXL)"""
     if not REPLICATE_API_KEY:
         return GenerationResult(success=False, error_message="Replicate API key not configured")
     
@@ -190,18 +185,17 @@ async def generate_with_replicate(
                     "input": {
                         "prompt": prompt,
                         "negative_prompt": negative_prompt,
-                        "width": width,
-                        "height": height,
+                        "width": 1024,
+                        "height": 1024,
                         "num_outputs": 1
                     }
                 }
             )
             
             if response.status_code != 201:
-                return GenerationResult(
-                    success=False,
-                    error_message=f"Replicate API error: {response.text}"
-                )
+                error_msg = f"Replicate API error: {response.text}"
+                logger.warning(error_msg)
+                return GenerationResult(success=False, error_message=error_msg)
             
             prediction = response.json()
             prediction_url = prediction["urls"]["get"]
@@ -221,17 +215,57 @@ async def generate_with_replicate(
                     
                     # Download image
                     img_response = await client.get(image_url)
-                    return GenerationResult(success=True, image_data=img_response.content)
+                    return GenerationResult(success=True, image_data=img_response.content, provider_used="replicate")
                 
                 elif status_data["status"] == "failed":
-                    return GenerationResult(
-                        success=False,
-                        error_message=status_data.get("error", "Generation failed")
-                    )
+                    error_msg = status_data.get("error", "Generation failed")
+                    logger.warning(f"Replicate failed: {error_msg}")
+                    return GenerationResult(success=False, error_message=error_msg)
             
             return GenerationResult(success=False, error_message="Generation timed out")
             
     except Exception as e:
+        logger.error(f"Replicate exception: {e}")
+        return GenerationResult(success=False, error_message=str(e))
+
+
+async def generate_with_openai(
+    prompt: str
+) -> GenerationResult:
+    """Generate image using OpenAI DALL-E API"""
+    if not OPENAI_API_KEY:
+        return GenerationResult(success=False, error_message="OpenAI API key not configured")
+    
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/images/generations",
+                headers={
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "dall-e-3",
+                    "prompt": prompt,
+                    "n": 1,
+                    "size": "1024x1024",
+                    "response_format": "b64_json"
+                }
+            )
+            
+            if response.status_code != 200:
+                error_msg = f"OpenAI API error: {response.text}"
+                logger.warning(error_msg)
+                return GenerationResult(success=False, error_message=error_msg)
+            
+            data = response.json()
+            image_b64 = data["data"][0]["b64_json"]
+            image_data = base64.b64decode(image_b64)
+            
+            return GenerationResult(success=True, image_data=image_data, provider_used="openai")
+            
+    except Exception as e:
+        logger.error(f"OpenAI exception: {e}")
         return GenerationResult(success=False, error_message=str(e))
 
 
@@ -258,30 +292,54 @@ async def generate_pixel_art(
     # Parse target size
     target_width, target_height = parse_size(target_size)
     
-    # Generate at higher resolution
-    gen_width = template["width"]
-    gen_height = template["height"]
+    # Track errors from each provider for debugging
+    errors = []
     
-    # Try Stability AI first, fall back to Replicate
-    result = await generate_with_stability(
-        prompt=full_prompt,
-        negative_prompt=negative_prompt,
-        width=gen_width,
-        height=gen_height,
-        steps=template["steps"],
-        cfg_scale=template["cfg_scale"]
-    )
-    
-    if not result.success and REPLICATE_API_KEY:
-        result = await generate_with_replicate(
+    # Try Stability AI first
+    if STABILITY_API_KEY:
+        logger.info("Trying Stability AI...")
+        result = await generate_with_stability(
             prompt=full_prompt,
             negative_prompt=negative_prompt,
-            width=gen_width,
-            height=gen_height
+            steps=template["steps"],
+            cfg_scale=template["cfg_scale"]
         )
+        if result.success:
+            logger.info("Stability AI succeeded")
+        else:
+            errors.append(f"Stability: {result.error_message}")
+            logger.warning(f"Stability AI failed: {result.error_message}")
+    else:
+        result = GenerationResult(success=False, error_message="No API key")
+        errors.append("Stability: No API key configured")
     
+    # Fallback to Replicate
+    if not result.success and REPLICATE_API_KEY:
+        logger.info("Falling back to Replicate...")
+        result = await generate_with_replicate(
+            prompt=full_prompt,
+            negative_prompt=negative_prompt
+        )
+        if result.success:
+            logger.info("Replicate succeeded")
+        else:
+            errors.append(f"Replicate: {result.error_message}")
+            logger.warning(f"Replicate failed: {result.error_message}")
+    
+    # Fallback to OpenAI
+    if not result.success and OPENAI_API_KEY:
+        logger.info("Falling back to OpenAI DALL-E...")
+        result = await generate_with_openai(prompt=full_prompt)
+        if result.success:
+            logger.info("OpenAI DALL-E succeeded")
+        else:
+            errors.append(f"OpenAI: {result.error_message}")
+            logger.warning(f"OpenAI failed: {result.error_message}")
+    
+    # If all failed, return combined error message
     if not result.success:
-        return result
+        combined_error = " | ".join(errors) if errors else "No AI providers configured"
+        return GenerationResult(success=False, error_message=combined_error)
     
     # Downscale to pixel art size
     try:
@@ -296,11 +354,8 @@ async def generate_pixel_art(
         return GenerationResult(
             success=True,
             image_data=pixel_art_data,
-            processing_time_ms=processing_time
+            processing_time_ms=processing_time,
+            provider_used=result.provider_used
         )
     except Exception as e:
         return GenerationResult(success=False, error_message=f"Image processing error: {str(e)}")
-
-
-# Need to import asyncio for Replicate polling
-import asyncio
