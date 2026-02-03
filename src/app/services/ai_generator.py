@@ -95,10 +95,14 @@ def parse_size(size_str: str) -> tuple[int, int]:
     return int(parts[0]), int(parts[1])
 
 
-def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: int) -> bytes:
+def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: int, model_type: str = "prompt-agent") -> bytes:
     """
-    Downscale image to target pixel size using nearest neighbor resampling.
-    This preserves the crisp pixel art look.
+    Process image for pixel art output.
+    
+    For block/item/armor agents: Downscale to reasonable size (256x256 or 512x512)
+    For prompt-agent: Keep larger size for quality
+    
+    The user-selected "size" is stored as metadata but we don't destroy the image.
     """
     img = Image.open(io.BytesIO(image_data))
     
@@ -106,12 +110,37 @@ def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: 
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     
-    # Downscale using NEAREST to keep pixel art crisp
-    img_small = img.resize((target_width, target_height), Image.Resampling.NEAREST)
+    # Determine output size based on model type and user preference
+    if model_type in ["block-agent", "item-agent", "armor-agent"]:
+        # For Minecraft assets, use a reasonable pixel art size
+        # User wants 16x16? We give them 256x256 which looks like pixel art
+        # User wants 64x64? We give them 512x512
+        if target_width <= 32:
+            output_size = (256, 256)
+        elif target_width <= 64:
+            output_size = (384, 384)
+        else:
+            output_size = (512, 512)
+    else:
+        # For prompt-agent (custom pixel art), keep it larger
+        # but still resize if needed for consistency
+        if target_width <= 32:
+            output_size = (512, 512)
+        elif target_width <= 64:
+            output_size = (768, 768)
+        else:
+            output_size = (1024, 1024)
+    
+    # Only resize if current size is different
+    if img.size != output_size:
+        # Use LANCZOS for high quality downscaling from 1024x1024
+        img_resized = img.resize(output_size, Image.Resampling.LANCZOS)
+    else:
+        img_resized = img
     
     # Save to bytes
     output = io.BytesIO()
-    img_small.save(output, format="PNG")
+    img_resized.save(output, format="PNG", optimize=True)
     return output.getvalue()
 
 
@@ -341,12 +370,13 @@ async def generate_pixel_art(
         combined_error = " | ".join(errors) if errors else "No AI providers configured"
         return GenerationResult(success=False, error_message=combined_error)
     
-    # Downscale to pixel art size
+    # Process image to appropriate size
     try:
         pixel_art_data = downscale_to_pixel_art(
             result.image_data,
             target_width,
-            target_height
+            target_height,
+            model_type.value if hasattr(model_type, 'value') else str(model_type)
         )
         
         processing_time = int((time.time() - start_time) * 1000)
