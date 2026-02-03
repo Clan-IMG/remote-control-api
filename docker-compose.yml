@@ -5,8 +5,11 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: pixelkid-api
-    ports:
-      - "8000:8000"
+    # Port-Mapping wird von Coolify/Traefik gehandhabt
+    # ports:
+    #   - "8000:8000"
+    expose:
+      - "8000"
     environment:
       - DATABASE_URL=mysql+aiomysql://pixelkid:${DB_PASSWORD}@db:3306/pixelkid
       - REDIS_HOST=redis
