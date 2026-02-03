@@ -58,6 +58,7 @@ _MODEL_TYPE_MAP = {
     "block-agent": ModelType.BLOCK_AGENT,
     "item-agent": ModelType.ITEM_AGENT,
     "armor-agent": ModelType.ARMOR_AGENT,
+    "prompt-agent": ModelType.PROMPT_AGENT,
 }
 
 MODEL_PROMPTS = {
@@ -110,7 +111,7 @@ async def enhance_prompt_with_gpt(user_prompt: str) -> str:
 
 def build_prompt(model_type: ModelType, user_prompt: str) -> tuple[str, str]:
     """Build the full prompt from model template and user input"""
-    template = MODEL_PROMPTS.get(model_type, MODEL_PROMPTS[ModelType.CUSTOM])
+    template = MODEL_PROMPTS.get(model_type, MODEL_PROMPTS[ModelType.ITEM_AGENT])
     full_prompt = template["base"].format(user_prompt=user_prompt)
     negative_prompt = template["negative"]
     return full_prompt, negative_prompt
@@ -312,7 +313,7 @@ async def generate_pixel_art(
     start_time = time.time()
     
     # Get template settings
-    template = MODEL_PROMPTS.get(model_type, MODEL_PROMPTS[ModelType.CUSTOM])
+    template = MODEL_PROMPTS.get(model_type, MODEL_PROMPTS[ModelType.ITEM_AGENT])
     
     # Enhance prompt with GPT for prompt-agent
     enhanced_prompt = None

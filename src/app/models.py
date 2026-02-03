@@ -18,7 +18,6 @@ class ModelType(str, enum.Enum):
     ITEM_AGENT = "item-agent"
     ARMOR_AGENT = "armor-agent"
     PROMPT_AGENT = "prompt-agent"
-    CUSTOM = "custom"
 
 
 class User(Base):
