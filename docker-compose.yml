@@ -105,8 +105,9 @@ services:
       - MYSQL_DATABASE=pixelkid
       - MYSQL_USER=pixelkid
       - MYSQL_PASSWORD=${DB_PASSWORD:-pixelkid123}
-    ports:
-      - "3306:3306"
+    # Ports nur für lokale Entwicklung - in Produktion entfernen
+    # ports:
+    #   - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
@@ -123,8 +124,9 @@ services:
     image: redis:7-alpine
     container_name: pixelkid-redis
     command: redis-server --appendonly yes
-    ports:
-      - "6379:6379"
+    # Ports nur für lokale Entwicklung - in Produktion entfernen
+    # ports:
+    #   - "6379:6379"
     volumes:
       - redis_data:/data
     networks:
