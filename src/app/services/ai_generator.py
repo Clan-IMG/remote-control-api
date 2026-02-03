@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GenerationResult:
     success: bool
-    image_data: Optional[bytes] = None
+    image_data: Optional[bytes] = None  # The actual pixel art (16x16, 32x32, etc.)
+    preview_data: Optional[bytes] = None  # Upscaled preview for display (512x512)
     error_message: Optional[str] = None
     processing_time_ms: Optional[int] = None
     provider_used: Optional[str] = None
@@ -36,39 +37,42 @@ class GenerationResult:
 # SDXL allowed dimensions (must use these for Stability AI)
 SDXL_DIMENSIONS = (1024, 1024)
 
-# Model-specific prompt templates
+# Model-specific prompt templates - OPTIMIZED FOR 2D FLAT TEXTURES
 MODEL_PROMPTS = {
     ModelType.BLOCK_AGENT: {
-        "base": "minecraft block texture, 2D front view, flat design, 16-bit pixel art style, "
-                "seamless tileable texture, {user_prompt}, clean edges, no gradients, "
-                "game asset, isolated on transparent background",
-        "negative": "3d, perspective, shading, gradient, blurry, noise, realistic, photo, "
-                   "complex details, text, watermark, signature",
-        "steps": 30,
-        "cfg_scale": 7
+        "base": "minecraft texture, flat 2D square texture, pixel art, 16x16 pixel grid, "
+                "{user_prompt}, single flat surface, NO 3D, NO perspective, NO cube, NO block shape, "
+                "seamless tileable, limited color palette, crisp pixel edges, retro game texture, "
+                "top-down view of one face only, solid colors, no gradients, no shading",
+        "negative": "3d, cube, block, perspective, isometric, depth, shadow, shading, gradient, "
+                   "blurry, realistic, photo, render, multiple sides, corner, edge view, "
+                   "anti-aliasing, smooth, text, watermark, complex, detailed",
+        "steps": 35,
+        "cfg_scale": 9
     },
     ModelType.ITEM_AGENT: {
-        "base": "minecraft item icon, 2D top-down isometric view, 16-bit pixel art style, "
-                "{user_prompt}, clean pixel edges, flat colors, game inventory icon, "
-                "isolated on transparent background, no shadow",
-        "negative": "3d render, realistic, photo, blurry, noise, gradient shading, "
-                   "complex background, text, watermark",
-        "steps": 30,
-        "cfg_scale": 7
+        "base": "minecraft item sprite, flat 2D pixel art icon, 16x16 pixel grid, "
+                "{user_prompt}, game inventory icon, NO 3D, NO perspective, NO depth, "
+                "flat colors, clean pixel edges, limited palette, retro game sprite, "
+                "centered item on transparent background, crisp pixels",
+        "negative": "3d, perspective, depth, shadow, shading, gradient, blurry, realistic, "
+                   "photo, render, anti-aliasing, smooth, text, watermark, complex background",
+        "steps": 35,
+        "cfg_scale": 9
     },
     ModelType.ARMOR_AGENT: {
-        "base": "minecraft armor piece, pixel art sprite, 16-bit style, {user_prompt}, "
-                "front facing, flat colors, clean edges, game character equipment, "
-                "isolated on transparent background",
-        "negative": "3d, realistic, photo, gradient, blur, complex details, "
-                   "text, watermark, background scenery",
-        "steps": 30,
-        "cfg_scale": 7
+        "base": "minecraft armor texture, flat 2D sprite sheet style, pixel art, "
+                "{user_prompt}, NO 3D, NO perspective, flat design, limited color palette, "
+                "clean pixel edges, game character equipment sprite, front facing flat view",
+        "negative": "3d, perspective, depth, shadow, shading, gradient, blurry, realistic, "
+                   "photo, render, anti-aliasing, smooth, text, watermark, worn by character",
+        "steps": 35,
+        "cfg_scale": 9
     },
     ModelType.PROMPT_AGENT: {
-        "base": "16-bit pixel art, retro game style, {user_prompt}, clean pixels, "
-                "flat colors, no anti-aliasing, crisp edges",
-        "negative": "blurry, gradient, realistic, 3d, complex, noisy",
+        "base": "pixel art, 16-bit retro game style, {user_prompt}, flat 2D, "
+                "clean crisp pixels, limited color palette, no anti-aliasing, no gradients",
+        "negative": "3d, blurry, gradient, realistic, smooth, anti-aliasing, noisy, complex",
         "steps": 35,
         "cfg_scale": 8
     },
@@ -98,11 +102,9 @@ def parse_size(size_str: str) -> tuple[int, int]:
 def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: int, model_type: str = "prompt-agent") -> bytes:
     """
     Process image for pixel art output.
+    Creates a REAL pixel art image at the target size using NEAREST neighbor.
     
-    For block/item/armor agents: Downscale to reasonable size (256x256 or 512x512)
-    For prompt-agent: Keep larger size for quality
-    
-    The user-selected "size" is stored as metadata but we don't destroy the image.
+    This produces actual 16x16, 32x32, 64x64 etc. pixel images that work in Blockbench.
     """
     img = Image.open(io.BytesIO(image_data))
     
@@ -110,37 +112,40 @@ def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: 
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     
-    # Determine output size based on model type and user preference
-    if model_type in ["block-agent", "item-agent", "armor-agent"]:
-        # For Minecraft assets, use a reasonable pixel art size
-        # User wants 16x16? We give them 256x256 which looks like pixel art
-        # User wants 64x64? We give them 512x512
-        if target_width <= 32:
-            output_size = (256, 256)
-        elif target_width <= 64:
-            output_size = (384, 384)
-        else:
-            output_size = (512, 512)
-    else:
-        # For prompt-agent (custom pixel art), keep it larger
-        # but still resize if needed for consistency
-        if target_width <= 32:
-            output_size = (512, 512)
-        elif target_width <= 64:
-            output_size = (768, 768)
-        else:
-            output_size = (1024, 1024)
+    # For Minecraft textures, we want ACTUAL pixel dimensions
+    # Use NEAREST neighbor resampling for crisp pixel art look
+    target_size = (target_width, target_height)
     
-    # Only resize if current size is different
-    if img.size != output_size:
-        # Use LANCZOS for high quality downscaling from 1024x1024
-        img_resized = img.resize(output_size, Image.Resampling.LANCZOS)
-    else:
-        img_resized = img
+    # Resize using NEAREST for that authentic pixel art look
+    img_resized = img.resize(target_size, Image.Resampling.NEAREST)
     
     # Save to bytes
     output = io.BytesIO()
     img_resized.save(output, format="PNG", optimize=True)
+    return output.getvalue()
+
+
+def create_preview_image(image_data: bytes, model_type: str = "prompt-agent") -> bytes:
+    """
+    Create a larger preview image for display purposes.
+    The preview is upscaled from the pixel art version for consistent display.
+    """
+    img = Image.open(io.BytesIO(image_data))
+    
+    # Convert to RGBA if needed
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+    
+    # Create a larger preview using NEAREST to maintain pixel art aesthetic
+    if model_type in ["block-agent", "item-agent", "armor-agent"]:
+        preview_size = (512, 512)  # 16x16 → 512x512 = 32x upscale
+    else:
+        preview_size = (512, 512)
+    
+    img_preview = img.resize(preview_size, Image.Resampling.NEAREST)
+    
+    output = io.BytesIO()
+    img_preview.save(output, format="PNG", optimize=True)
     return output.getvalue()
 
 
@@ -372,18 +377,28 @@ async def generate_pixel_art(
     
     # Process image to appropriate size
     try:
+        model_type_str = model_type.value if hasattr(model_type, 'value') else str(model_type)
+        
+        # Create the actual pixel art image (16x16, 32x32, etc.)
         pixel_art_data = downscale_to_pixel_art(
             result.image_data,
             target_width,
             target_height,
-            model_type.value if hasattr(model_type, 'value') else str(model_type)
+            model_type_str
+        )
+        
+        # Create a larger preview image for display (upscaled from pixel art)
+        preview_data = create_preview_image(
+            pixel_art_data,
+            model_type_str
         )
         
         processing_time = int((time.time() - start_time) * 1000)
         
         return GenerationResult(
             success=True,
-            image_data=pixel_art_data,
+            image_data=pixel_art_data,  # Actual 16x16 for Blockbench
+            preview_data=preview_data,  # 512x512 for display
             processing_time_ms=processing_time,
             provider_used=result.provider_used
         )
