@@ -14,8 +14,10 @@ Includes prompt enhancement using GPT-4o-mini for prompt-agent.
 import httpx
 import base64
 import io
+import json
 import asyncio
 import logging
+from pathlib import Path
 from PIL import Image
 from typing import Optional
 from dataclasses import dataclass
@@ -38,70 +40,29 @@ class GenerationResult:
 # SDXL allowed dimensions (must use these for Stability AI)
 SDXL_DIMENSIONS = (1024, 1024)
 
+# Load prompt configuration from JSON file
+_CONFIG_PATH = Path(__file__).parent / "prompt_config.json"
+
+def _load_prompt_config():
+    """Load prompt configuration from JSON file"""
+    with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+_config = _load_prompt_config()
+
 # Prompt enhancement system prompt
-PROMPT_ENHANCEMENT_SYSTEM = """You are an expert at creating detailed, high-quality prompts for AI image generation, specifically for Minecraft-style 16-bit pixel art.
+PROMPT_ENHANCEMENT_SYSTEM = _config["prompt_enhancement_system"]
 
-Your task is to take a simple user prompt and enhance it into a detailed, descriptive prompt that will generate beautiful pixel art.
+# Model-specific prompt templates (convert string keys to ModelType enum)
+_MODEL_TYPE_MAP = {
+    "block-agent": ModelType.BLOCK_AGENT,
+    "item-agent": ModelType.ITEM_AGENT,
+    "armor-agent": ModelType.ARMOR_AGENT,
+}
 
-Guidelines:
-- Keep the Minecraft/pixel art style focus
-- Add specific details about colors, lighting, composition
-- Mention pixel art techniques: clean edges, flat colors, no gradients, crisp pixels
-- Keep it concise but descriptive (max 100 words)
-- Always include: "16-bit pixel art, Minecraft style, clean pixels, flat colors"
-- Do NOT add any explanations, just output the enhanced prompt
-
-Example:
-User: "a blue sword"
-Enhanced: "16-bit pixel art Minecraft diamond sword, brilliant blue crystalline blade with cyan highlights, dark iron handle with leather grip details, magical sparkle particles, clean pixel edges, flat colors, game item icon style, isolated on transparent background"
-"""
-
-# Model-specific prompt templates
 MODEL_PROMPTS = {
-    ModelType.BLOCK_AGENT: {
-        "base": "minecraft block texture, 2D front view, flat design, 16-bit pixel art style, "
-                "seamless tileable texture, {user_prompt}, clean edges, no gradients, "
-                "game asset, isolated on transparent background",
-        "negative": "3d, perspective, shading, gradient, blurry, noise, realistic, photo, "
-                   "complex details, text, watermark, signature",
-        "steps": 30,
-        "cfg_scale": 7,
-        "enhance_prompt": False
-    },
-    ModelType.ITEM_AGENT: {
-        "base": "minecraft item icon, 2D top-down isometric view, 16-bit pixel art style, "
-                "{user_prompt}, clean pixel edges, flat colors, game inventory icon, "
-                "isolated on transparent background, no shadow",
-        "negative": "3d render, realistic, photo, blurry, noise, gradient shading, "
-                   "complex background, text, watermark",
-        "steps": 30,
-        "cfg_scale": 7,
-        "enhance_prompt": False
-    },
-    ModelType.ARMOR_AGENT: {
-        "base": "minecraft armor piece, pixel art sprite, 16-bit style, {user_prompt}, "
-                "front facing, flat colors, clean edges, game character equipment, "
-                "isolated on transparent background",
-        "negative": "3d, realistic, photo, gradient, blur, complex details, "
-                   "text, watermark, background scenery",
-        "steps": 30,
-        "cfg_scale": 7,
-        "enhance_prompt": False
-    },
-    ModelType.PROMPT_AGENT: {
-        "base": "{user_prompt}",  # Uses enhanced prompt directly
-        "negative": "blurry, gradient, realistic, 3d, complex, noisy, low quality, jpeg artifacts",
-        "steps": 35,
-        "cfg_scale": 8,
-        "enhance_prompt": True  # Use GPT to enhance the prompt
-    },
-    ModelType.CUSTOM: {
-        "base": "{user_prompt}",
-        "negative": "blurry, noise, low quality",
-        "steps": 30,
-        "cfg_scale": 7,
-        "enhance_prompt": False
-    }
+    _MODEL_TYPE_MAP[key]: value
+    for key, value in _config["model_prompts"].items()
 }
 
 
