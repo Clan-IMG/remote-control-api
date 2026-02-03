@@ -99,7 +99,8 @@ async def process_generation(request_data: dict) -> bool:
             result = await generate_pixel_art(
                 model_type=ModelType(request_data["model"]),
                 user_prompt=request_data["prompt"],
-                target_size=request_data.get("size", "16x16")
+                target_size=request_data.get("size", "16x16"),
+                provider=request_data.get("provider", "auto")
             )
             
             if result.success:

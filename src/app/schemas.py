@@ -21,6 +21,12 @@ class RequestStatusEnum(str, Enum):
     FAILED = "failed"
 
 
+class AIProviderEnum(str, Enum):
+    AUTO = "auto"  # Automatic fallback (default)
+    STABILITY = "stability"  # Stability AI (SDXL)
+    OPENAI = "openai"  # OpenAI DALL-E
+
+
 # ========== Auth Schemas ==========
 
 class UserRegister(BaseModel):
@@ -90,6 +96,7 @@ class GenerationRequest(BaseModel):
     input: str = Field(..., min_length=1, max_length=1000)
     size: str = Field(default="16x16", pattern=r"^\d+x\d+$")
     is_public: bool = False
+    provider: AIProviderEnum = AIProviderEnum.AUTO  # AI provider selection
 
 
 class GenerationResponse(BaseModel):

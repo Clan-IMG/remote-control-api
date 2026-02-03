@@ -75,6 +75,7 @@ async def create_generation(
         "prompt": request.input,
         "size": request.size,
         "is_public": request.is_public,
+        "provider": request.provider.value,
         "created_at": datetime.utcnow().isoformat()
     }
     

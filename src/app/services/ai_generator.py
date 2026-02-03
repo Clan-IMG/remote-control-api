@@ -318,7 +318,8 @@ async def generate_with_openai(
 async def generate_pixel_art(
     model_type: ModelType,
     user_prompt: str,
-    target_size: str = "16x16"
+    target_size: str = "16x16",
+    provider: str = "auto"
 ) -> GenerationResult:
     """
     Main generation function.
@@ -326,6 +327,12 @@ async def generate_pixel_art(
     2. Build appropriate prompt based on model type
     3. Generate at higher resolution
     4. Downscale to target pixel size
+    
+    Args:
+        model_type: The model type to use for generation
+        user_prompt: The user's prompt
+        target_size: Target pixel size (e.g., "16x16")
+        provider: AI provider to use ("auto", "stability", "openai")
     """
     import time
     start_time = time.time()
@@ -351,45 +358,78 @@ async def generate_pixel_art(
     errors = []
     result = GenerationResult(success=False)
     
-    # Try Stability AI first
-    if STABILITY_API_KEYS:
-        logger.info("Trying Stability AI...")
-        result = await generate_with_stability(
-            prompt=full_prompt,
-            negative_prompt=negative_prompt,
-            steps=template["steps"],
-            cfg_scale=template["cfg_scale"]
-        )
-        if result.success:
-            logger.info("Stability AI succeeded")
+    # Provider-specific logic
+    if provider == "stability":
+        # Force Stability AI only
+        if STABILITY_API_KEYS:
+            logger.info("Using Stability AI (user selected)...")
+            result = await generate_with_stability(
+                prompt=full_prompt,
+                negative_prompt=negative_prompt,
+                steps=template["steps"],
+                cfg_scale=template["cfg_scale"]
+            )
+            if result.success:
+                logger.info("Stability AI succeeded")
+            else:
+                errors.append(f"Stability: {result.error_message}")
+                logger.warning(f"Stability AI failed: {result.error_message}")
         else:
-            errors.append(f"Stability: {result.error_message}")
-            logger.warning(f"Stability AI failed: {result.error_message}")
+            errors.append("Stability: No API key configured")
+            
+    elif provider == "openai":
+        # Force OpenAI DALL-E only
+        if OPENAI_API_KEY:
+            logger.info("Using OpenAI DALL-E (user selected)...")
+            result = await generate_with_openai(prompt=full_prompt)
+            if result.success:
+                logger.info("OpenAI DALL-E succeeded")
+            else:
+                errors.append(f"OpenAI: {result.error_message}")
+                logger.warning(f"OpenAI failed: {result.error_message}")
+        else:
+            errors.append("OpenAI: No API key configured")
+            
     else:
-        errors.append("Stability: No API key configured")
-    
-    # Fallback to Replicate
-    if not result.success and REPLICATE_API_KEY:
-        logger.info("Falling back to Replicate...")
-        result = await generate_with_replicate(
-            prompt=full_prompt,
-            negative_prompt=negative_prompt
-        )
-        if result.success:
-            logger.info("Replicate succeeded")
+        # Auto mode: Try Stability AI first, then fallback
+        if STABILITY_API_KEYS:
+            logger.info("Trying Stability AI...")
+            result = await generate_with_stability(
+                prompt=full_prompt,
+                negative_prompt=negative_prompt,
+                steps=template["steps"],
+                cfg_scale=template["cfg_scale"]
+            )
+            if result.success:
+                logger.info("Stability AI succeeded")
+            else:
+                errors.append(f"Stability: {result.error_message}")
+                logger.warning(f"Stability AI failed: {result.error_message}")
         else:
-            errors.append(f"Replicate: {result.error_message}")
-            logger.warning(f"Replicate failed: {result.error_message}")
-    
-    # Fallback to OpenAI
-    if not result.success and OPENAI_API_KEY:
-        logger.info("Falling back to OpenAI DALL-E...")
-        result = await generate_with_openai(prompt=full_prompt)
-        if result.success:
-            logger.info("OpenAI DALL-E succeeded")
-        else:
-            errors.append(f"OpenAI: {result.error_message}")
-            logger.warning(f"OpenAI failed: {result.error_message}")
+            errors.append("Stability: No API key configured")
+        
+        # Fallback to Replicate
+        if not result.success and REPLICATE_API_KEY:
+            logger.info("Falling back to Replicate...")
+            result = await generate_with_replicate(
+                prompt=full_prompt,
+                negative_prompt=negative_prompt
+            )
+            if result.success:
+                logger.info("Replicate succeeded")
+            else:
+                errors.append(f"Replicate: {result.error_message}")
+                logger.warning(f"Replicate failed: {result.error_message}")
+        
+        # Fallback to OpenAI
+        if not result.success and OPENAI_API_KEY:
+            logger.info("Falling back to OpenAI DALL-E...")
+            result = await generate_with_openai(prompt=full_prompt)
+            if result.success:
+                logger.info("OpenAI DALL-E succeeded")
+            else:
+                errors.append(f"OpenAI: {result.error_message}")
+                logger.warning(f"OpenAI failed: {result.error_message}")
     
     # If all failed, return combined error message
     if not result.success:
