@@ -38,12 +38,17 @@ class UserResponse(BaseModel):
     id: str
     email: str
     username: str
+    avatar_url: Optional[str] = None
     is_active: bool
     is_verified: bool
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class ProfileUpdate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
 
 
 class TokenResponse(BaseModel):

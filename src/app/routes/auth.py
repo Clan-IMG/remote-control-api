@@ -1,12 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta
+import os
+import uuid
+import aiofiles
 from src.app.database import get_db
 from src.app.models import User, ApiKey
 from src.app.schemas import (
     UserRegister, UserLogin, UserResponse, TokenResponse,
-    ApiKeyCreate, ApiKeyResponse, ApiKeyCreated
+    ApiKeyCreate, ApiKeyResponse, ApiKeyCreated, ProfileUpdate
 )
 from src.app.auth import (
     hash_password, authenticate_user, create_access_token, 
@@ -14,8 +17,13 @@ from src.app.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 from src.app.dependencies import get_current_user
+from src.app.config import UPLOAD_DIR
 
 router = APIRouter(prefix="/v1/auth", tags=["Authentication"])
+
+# Allowed image types
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5MB
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -108,6 +116,107 @@ async def refresh_token(
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     """Get current user info"""
+    return current_user
+
+
+# ========== Profile Management ==========
+
+@router.patch("/profile", response_model=UserResponse)
+async def update_profile(
+    profile_data: ProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update user profile (username)"""
+    # Check if username is already taken by another user
+    if profile_data.username != current_user.username:
+        existing = await db.execute(
+            select(User).where(User.username == profile_data.username)
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already taken"
+            )
+    
+    # Update username
+    current_user.username = profile_data.username
+    await db.commit()
+    await db.refresh(current_user)
+    
+    return current_user
+
+
+@router.post("/avatar", response_model=UserResponse)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload user avatar image"""
+    # Validate file type
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file type. Allowed: JPEG, PNG, GIF, WebP"
+        )
+    
+    # Read file and check size
+    content = await file.read()
+    if len(content) > MAX_AVATAR_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File too large. Maximum size: 5MB"
+        )
+    
+    # Generate unique filename
+    file_ext = file.filename.split(".")[-1] if file.filename else "png"
+    filename = f"avatars/{current_user.id}_{uuid.uuid4().hex[:8]}.{file_ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    
+    # Ensure avatars directory exists
+    os.makedirs(os.path.join(UPLOAD_DIR, "avatars"), exist_ok=True)
+    
+    # Delete old avatar if exists
+    if current_user.avatar_url:
+        old_path = os.path.join(UPLOAD_DIR, current_user.avatar_url.lstrip("/uploads/"))
+        if os.path.exists(old_path):
+            os.remove(old_path)
+    
+    # Save new file
+    async with aiofiles.open(filepath, "wb") as f:
+        await f.write(content)
+    
+    # Update user avatar URL
+    current_user.avatar_url = f"/uploads/{filename}"
+    await db.commit()
+    await db.refresh(current_user)
+    
+    return current_user
+
+
+@router.delete("/avatar", response_model=UserResponse)
+async def delete_avatar(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete user avatar"""
+    if not current_user.avatar_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No avatar to delete"
+        )
+    
+    # Delete file from disk
+    filepath = os.path.join(UPLOAD_DIR, current_user.avatar_url.lstrip("/uploads/"))
+    if os.path.exists(filepath):
+        os.remove(filepath)
+    
+    # Clear avatar URL
+    current_user.avatar_url = None
+    await db.commit()
+    await db.refresh(current_user)
+    
     return current_user
 
 
