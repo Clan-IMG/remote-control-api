@@ -352,7 +352,7 @@ async def generate_pixel_art(
     result = GenerationResult(success=False)
     
     # Try Stability AI first
-    if STABILITY_API_KEY:
+    if STABILITY_API_KEYS:
         logger.info("Trying Stability AI...")
         result = await generate_with_stability(
             prompt=full_prompt,
