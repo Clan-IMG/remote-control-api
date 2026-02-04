@@ -151,8 +151,6 @@ services:
       - PMA_HOST=db
       - PMA_PORT=3306
       - UPLOAD_LIMIT=64M
-    ports:
-      - "8080:80"
     depends_on:
       - db
     networks:
