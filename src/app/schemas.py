@@ -191,3 +191,23 @@ class HealthResponse(BaseModel):
     redis_connected: bool
     database_connected: bool
     active_containers: int
+
+# ========== System/Admin Schemas ==========
+
+class SystemSettingUpdate(BaseModel):
+    key: str
+    value: str
+
+class SystemSettingResponse(BaseModel):
+    key: str
+    value: Optional[str]
+    description: Optional[str]
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class UserApprovalUpdate(BaseModel):
+    user_id: str
+    login_enabled: bool
+
