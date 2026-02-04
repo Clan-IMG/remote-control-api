@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 from pydantic import BaseModel
 from src.app.database import get_db
 from src.app.redis_client import get_redis, QUEUE_PENDING, KEY_REQUEST_PREFIX
-from src.app.models import User, Generation, ModelType, RequestStatus
+from src.app.models import User, Generation, ModelType, RequestStatus, PublicGallery
 from src.app.schemas import (
     GenerationRequest, GenerationResponse, GenerationQueueResponse, GenerationListResponse
 )
@@ -256,6 +256,23 @@ async def update_visibility(
         )
     
     generation.is_public = request.is_public
+
+    # Manage PublicGallery entry
+    if request.is_public:
+        # Check if exists
+        gallery_entry = await db.execute(
+            select(PublicGallery).where(PublicGallery.generation_id == generation.id)
+        )
+        if not gallery_entry.scalar_one_or_none():
+            # Create entry
+            new_gallery_item = PublicGallery(
+                generation_id=generation.id,
+                title=generation.prompt[:100] if generation.prompt else "Untitled",
+                likes=0,
+                downloads=0
+            )
+            db.add(new_gallery_item)
+
     await db.commit()
     
     return {"success": True, "is_public": request.is_public}
