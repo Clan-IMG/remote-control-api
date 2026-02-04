@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from src.app.database import get_db
-from src.app.models import User, Generation, RequestStatus
+from src.app.models import User, Generation, RequestStatus, ModelType
 
 router = APIRouter(prefix="/v1/stats", tags=["Stats"])
 
@@ -19,8 +19,12 @@ async def get_public_stats(db: AsyncSession = Depends(get_db)):
     user_result = await db.execute(user_query)
     total_users = user_result.scalar_one()
 
+    # Get available models
+    models = [model.value for model in ModelType]
+
     return {
         "images_generated": total_images,
         "active_users": total_users,
-        "pixel_resolution": "16x16"
+        "pixel_resolution": "16x16",
+        "models": models
     }
