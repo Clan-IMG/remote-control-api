@@ -11,6 +11,9 @@ class ModelTypeEnum(str, Enum):
     ITEM_AGENT = "item-agent"
     ARMOR_AGENT = "armor-agent"
     PROMPT_AGENT = "prompt-agent"
+    PICTURE_AGENT = "picture-agent"
+    LOGO_AGENT_2D = "logo-agent-2d"
+    LOGO_AGENT_3D = "logo-agent-3d"
     CUSTOM = "custom"
 
 
