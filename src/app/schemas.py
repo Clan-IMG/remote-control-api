@@ -64,6 +64,10 @@ class TokenResponse(BaseModel):
     expires_in: int
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
 # ========== API Key Schemas ==========
 
 class ApiKeyCreate(BaseModel):

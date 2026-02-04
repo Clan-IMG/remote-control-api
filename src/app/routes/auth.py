@@ -9,7 +9,8 @@ from src.app.database import get_db
 from src.app.models import User, ApiKey
 from src.app.schemas import (
     UserRegister, UserLogin, UserResponse, TokenResponse,
-    ApiKeyCreate, ApiKeyResponse, ApiKeyCreated, ProfileUpdate
+    ApiKeyCreate, ApiKeyResponse, ApiKeyCreated, ProfileUpdate,
+    RefreshTokenRequest
 )
 from src.app.auth import (
     hash_password, authenticate_user, create_access_token, 
@@ -92,11 +93,11 @@ async def login(
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
-    refresh_token: str,
+    request: RefreshTokenRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """Refresh access token using refresh token"""
-    user_id = verify_token(refresh_token, token_type="refresh")
+    user_id = verify_token(request.refresh_token, token_type="refresh")
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
