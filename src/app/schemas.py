@@ -151,6 +151,7 @@ class GalleryItemResponse(BaseModel):
     downloads: int
     created_at: datetime
     username: str
+    avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True
