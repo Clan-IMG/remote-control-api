@@ -26,6 +26,10 @@ class EnhancePromptResponse(BaseModel):
     enhanced: str
 
 
+class UpdateVisibilityRequest(BaseModel):
+    is_public: bool
+
+
 @router.post("/enhance-prompt", response_model=EnhancePromptResponse)
 async def enhance_prompt(
     request: EnhancePromptRequest,
@@ -233,7 +237,7 @@ async def list_generations(
 @router.patch("/{generation_id}/visibility")
 async def update_visibility(
     generation_id: str,
-    is_public: bool,
+    request: UpdateVisibilityRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -251,10 +255,10 @@ async def update_visibility(
             detail="Generation not found"
         )
     
-    generation.is_public = is_public
+    generation.is_public = request.is_public
     await db.commit()
     
-    return {"success": True, "is_public": is_public}
+    return {"success": True, "is_public": request.is_public}
 
 
 @router.delete("/{generation_id}", status_code=status.HTTP_204_NO_CONTENT)
