@@ -29,6 +29,27 @@
             "steps": 25,
             "cfg_scale": 8,
             "enhance_prompt": true
+        },
+        "picture-agent": {
+            "base": "pixel art scene, {user_prompt}, Minecraft style, 16-bit pixel art, detailed pixelated illustration, clean pixel edges, vibrant colors, game art style, masterpiece",
+            "negative": "blurry, soft edges, realistic, photo, 3D render, messy pixels, distorted, text, watermark",
+            "steps": 30,
+            "cfg_scale": 8,
+            "enhance_prompt": true
+        },
+        "logo-agent-2d": {
+            "base": "pixel art logo design, 2D flat style, {user_prompt}, bold clean typography, pixel font, retro game logo, clean pixel edges, flat colors, vibrant, centered composition, transparent background, masterpiece",
+            "negative": "blurry, soft edges, 3D, perspective, gradient, realistic, photo, messy pixels, distorted text, unreadable",
+            "steps": 30,
+            "cfg_scale": 9,
+            "enhance_prompt": true
+        },
+        "logo-agent-3d": {
+            "base": "pixel art logo design, 3D isometric style, {user_prompt}, bold typography with depth, pixel font with 3D effect, retro game logo, clean pixel edges, vibrant colors with shading, centered composition, transparent background, masterpiece",
+            "negative": "blurry, soft edges, realistic, photo, messy pixels, distorted text, unreadable, flat, no depth",
+            "steps": 35,
+            "cfg_scale": 9,
+            "enhance_prompt": true
         }
     }
 }
