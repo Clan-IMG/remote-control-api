@@ -475,13 +475,27 @@ async def generate_with_openai(
             ref_img.save(buf, format="JPEG", quality=80)
             ref_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
             
-            strength_word = "loosely inspired by"
-            if reference_strength >= 0.75:
-                strength_word = "very closely matching"
+            # Build a very specific vision analysis prompt depending on strength
+            if reference_strength >= 0.85:
+                vision_system = (
+                    "You are an expert image analyst. Describe this reference image in EXTREME detail (3-4 sentences): "
+                    "exact colors (use specific color names like 'coral red', 'midnight blue'), exact shapes, "
+                    "facial features, hair color/style, eye color, clothing, pose, expression, art style, "
+                    "lighting direction, and color palette. Be VERY precise about every visual element. "
+                    "Output ONLY the description."
+                )
             elif reference_strength >= 0.5:
-                strength_word = "closely following the style and colors of"
-            elif reference_strength >= 0.25:
-                strength_word = "somewhat inspired by"
+                vision_system = (
+                    "You are an image description assistant. Describe the key visual elements of this reference image "
+                    "in 2-3 sentences: main colors, shapes, style, composition, and notable features. "
+                    "Be specific about colors and forms. Output ONLY the description, no preamble."
+                )
+            else:
+                vision_system = (
+                    "You are an image description assistant. Briefly describe the overall style and mood of "
+                    "this reference image in 1-2 sentences: general color palette, art style, and atmosphere. "
+                    "Output ONLY the description."
+                )
             
             async with httpx.AsyncClient(timeout=30.0) as client:
                 vision_response = await client.post(
@@ -495,7 +509,7 @@ async def generate_with_openai(
                         "messages": [
                             {
                                 "role": "system",
-                                "content": "You are an image description assistant. Describe the key visual elements of this reference image in 2-3 sentences: main colors, shapes, style, composition, and notable features. Be specific and concise. Output ONLY the description, no preamble."
+                                "content": vision_system
                             },
                             {
                                 "role": "user",
@@ -505,15 +519,36 @@ async def generate_with_openai(
                                 ]
                             }
                         ],
-                        "max_tokens": 150,
-                        "temperature": 0.3
+                        "max_tokens": 200,
+                        "temperature": 0.2
                     }
                 )
                 
                 if vision_response.status_code == 200:
                     description = vision_response.json()["choices"][0]["message"]["content"].strip()
-                    final_prompt = f"{prompt}. The result should be {strength_word} this reference: {description}"
                     logger.info(f"OpenAI reference description: {description[:100]}...")
+                    
+                    # At very high strength: reference description IS the prompt, user prompt is secondary
+                    if reference_strength >= 0.85:
+                        final_prompt = (
+                            f"IMPORTANT: Reproduce this exact image as pixel art: {description}. "
+                            f"Match the exact colors, shapes, and composition described above. "
+                            f"Additional context from user: {prompt}"
+                        )
+                    elif reference_strength >= 0.6:
+                        final_prompt = (
+                            f"Create pixel art that closely matches this reference: {description}. "
+                            f"Use the same colors, forms, and style. "
+                            f"User request: {prompt}"
+                        )
+                    elif reference_strength >= 0.35:
+                        final_prompt = (
+                            f"{prompt}. Follow the style and color palette of this reference: {description}"
+                        )
+                    else:
+                        final_prompt = (
+                            f"{prompt}. Loosely inspired by this mood/style: {description}"
+                        )
                 else:
                     logger.warning(f"GPT-4o vision failed ({vision_response.status_code}), using prompt without reference")
                     
@@ -583,12 +618,17 @@ async def generate_pixel_art(
     template = MODEL_PROMPTS.get(model_type, MODEL_PROMPTS[ModelType.ITEM_AGENT])
     
     # Enhance prompt with GPT for prompt-agent
+    # Skip enhancement when reference image is provided with high strength,
+    # because enhancement invents creative details that contradict the reference.
     enhanced_prompt = None
     working_prompt = user_prompt
-    if template.get("enhance_prompt", False):
+    skip_enhance = reference_image is not None and reference_strength >= 0.6
+    if template.get("enhance_prompt", False) and not skip_enhance:
         logger.info(f"Enhancing prompt with GPT: '{user_prompt}'")
         enhanced_prompt = await enhance_prompt_with_gpt(user_prompt)
         working_prompt = enhanced_prompt
+    elif skip_enhance:
+        logger.info(f"Skipping prompt enhancement (reference_strength={reference_strength:.2f} >= 0.6)")
     
     # Build prompts
     full_prompt, negative_prompt = build_prompt(model_type, working_prompt)
@@ -640,6 +680,10 @@ async def generate_pixel_art(
             
     else:
         # Auto mode: Try Stability AI first, then fallback
+        # When reference image is provided, STRONGLY prefer Stability (real img2img)
+        if reference_image is not None and STABILITY_API_KEYS:
+            logger.info("Auto mode with reference image → forcing Stability AI (real img2img)...")
+        
         if STABILITY_API_KEYS:
             logger.info("Trying Stability AI...")
             result = await generate_with_stability(
@@ -658,7 +702,7 @@ async def generate_pixel_art(
         else:
             errors.append("Stability: No API key configured")
         
-        # Fallback to Replicate
+        # Fallback to Replicate (no img2img support currently)
         if not result.success and REPLICATE_API_KEY:
             logger.info("Falling back to Replicate...")
             result = await generate_with_replicate(
@@ -671,9 +715,9 @@ async def generate_pixel_art(
                 errors.append(f"Replicate: {result.error_message}")
                 logger.warning(f"Replicate failed: {result.error_message}")
         
-        # Fallback to OpenAI
+        # Fallback to OpenAI (prompt enrichment only, no real img2img)
         if not result.success and OPENAI_API_KEY:
-            logger.info("Falling back to OpenAI DALL-E...")
+            logger.info("Falling back to OpenAI DALL-E (text-only, no real img2img)...")
             result = await generate_with_openai(
                 prompt=full_prompt,
                 reference_image=reference_image,
