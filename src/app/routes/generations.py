@@ -1,10 +1,12 @@
 import json
+import os
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel
+from typing import Optional
 from src.app.database import get_db
 from src.app.redis_client import get_redis, QUEUE_PENDING, KEY_REQUEST_PREFIX
 from src.app.models import User, Generation, ModelType, RequestStatus, PublicGallery
@@ -13,6 +15,7 @@ from src.app.schemas import (
 )
 from src.app.dependencies import get_current_user
 from src.app.services.ai_generator import enhance_prompt_with_gpt
+from src.app.config import UPLOAD_DIR
 
 router = APIRouter(prefix="/v1/responses", tags=["Generations"])
 
@@ -46,6 +49,46 @@ async def enhance_prompt(
     )
 
 
+@router.post("/upload-reference")
+async def upload_reference_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Upload a reference image for image-to-image generation.
+    Returns the URL of the uploaded image.
+    """
+    # Validate file type
+    allowed_types = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file type: {file.content_type}. Allowed: PNG, JPG, WEBP"
+        )
+    
+    # Read and validate file size (max 10MB)
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File too large. Maximum size is 10MB."
+        )
+    
+    # Save to uploads directory
+    ref_dir = os.path.join(UPLOAD_DIR, "references")
+    os.makedirs(ref_dir, exist_ok=True)
+    
+    ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "png"
+    filename = f"ref_{current_user.id}_{uuid.uuid4().hex[:8]}.{ext}"
+    filepath = os.path.join(ref_dir, filename)
+    
+    with open(filepath, "wb") as f:
+        f.write(content)
+    
+    reference_url = f"/uploads/references/{filename}"
+    return {"reference_image_url": reference_url}
+
+
 @router.post("", response_model=GenerationQueueResponse, status_code=status.HTTP_202_ACCEPTED)
 async def create_generation(
     request: GenerationRequest,
@@ -65,6 +108,8 @@ async def create_generation(
         prompt=request.input,
         size=request.size,
         is_public=request.is_public,
+        reference_image_url=request.reference_image_url,
+        reference_strength=request.reference_strength if request.reference_image_url else None,
         status=RequestStatus.PENDING
     )
     db.add(generation)
@@ -80,6 +125,8 @@ async def create_generation(
         "size": request.size,
         "is_public": request.is_public,
         "provider": request.provider.value,
+        "reference_image_url": request.reference_image_url,
+        "reference_strength": request.reference_strength if request.reference_image_url else None,
         "created_at": datetime.utcnow().isoformat()
     }
     
@@ -135,6 +182,8 @@ async def get_generation(
         status=generation.status,
         is_public=generation.is_public,
         image_url=generation.image_url,
+        reference_image_url=generation.reference_image_url,
+        reference_strength=generation.reference_strength,
         error_message=generation.error_message,
         processing_time_ms=generation.processing_time_ms,
         created_at=generation.created_at,
@@ -218,6 +267,8 @@ async def list_generations(
             status=g.status,
             is_public=g.is_public,
             image_url=g.image_url,
+            reference_image_url=g.reference_image_url,
+            reference_strength=g.reference_strength,
             error_message=g.error_message,
             processing_time_ms=g.processing_time_ms,
             created_at=g.created_at,

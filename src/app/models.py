@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, Enum, ForeignKey, Index
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, Enum, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from src.app.database import Base
@@ -83,6 +83,8 @@ class Generation(Base):
     size = Column(String(20), default="16x16")
     status = Column(Enum(RequestStatus), default=RequestStatus.PENDING, index=True)
     is_public = Column(Boolean, default=False, index=True)
+    reference_image_url = Column(String(500), nullable=True)
+    reference_strength = Column(Float, default=0.5, nullable=True)  # 0.0-1.0
     image_url = Column(String(500), nullable=True)
     thumbnail_url = Column(String(500), nullable=True)
     error_message = Column(Text, nullable=True)

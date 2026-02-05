@@ -29,6 +29,14 @@ def parse_db_url(url: str):
         "db": db
     }
 
+# --- Add reference image columns migration ---
+REFERENCE_IMAGE_MIGRATION = (
+    "reference_image_columns",
+    "ALTER TABLE generations "
+    "ADD COLUMN reference_image_url VARCHAR(500) NULL AFTER is_public, "
+    "ADD COLUMN reference_strength FLOAT NULL DEFAULT 0.5 AFTER reference_image_url;"
+)
+
 INDEXES = [
     ("idx_generations_user_id", "CREATE INDEX idx_generations_user_id ON generations(user_id)"),
     ("idx_generations_created_at", "CREATE INDEX idx_generations_created_at ON generations(created_at)"),
@@ -50,6 +58,18 @@ async def main():
     )
     
     async with conn.cursor() as cursor:
+        # --- Run migrations ---
+        for mig_name, mig_sql in MIGRATIONS:
+            try:
+                print(f"Applying migration: {mig_name}")
+                await cursor.execute(mig_sql)
+                await conn.commit()
+                print(f"✓ Migration '{mig_name}' applied")
+            except Exception as e:
+                if "Duplicate column name" in str(e) or "already exists" in str(e):
+                    print(f"✓ Migration '{mig_name}' already applied")
+                else:
+                    print(f"✗ Failed migration '{mig_name}': {e}")
         # Check existing indexes
         await cursor.execute("SHOW INDEX FROM generations")
         existing = await cursor.fetchall()

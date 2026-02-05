@@ -104,6 +104,8 @@ class GenerationRequest(BaseModel):
     size: str = Field(default="16x16", pattern=r"^\d+x\d+$")
     is_public: bool = False
     provider: AIProviderEnum = AIProviderEnum.AUTO  # AI provider selection
+    reference_image_url: Optional[str] = None  # URL of uploaded reference image
+    reference_strength: float = Field(default=0.5, ge=0.0, le=1.0)  # How much to follow the reference
 
 
 class GenerationResponse(BaseModel):
@@ -114,6 +116,8 @@ class GenerationResponse(BaseModel):
     status: RequestStatusEnum
     is_public: bool
     image_url: Optional[str]
+    reference_image_url: Optional[str] = None
+    reference_strength: Optional[float] = None
     error_message: Optional[str]
     processing_time_ms: Optional[int]
     created_at: datetime

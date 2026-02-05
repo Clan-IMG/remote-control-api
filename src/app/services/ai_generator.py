@@ -273,39 +273,87 @@ async def generate_with_stability(
     prompt: str,
     negative_prompt: str,
     steps: int = 30,
-    cfg_scale: float = 7
+    cfg_scale: float = 7,
+    reference_image: Optional[bytes] = None,
+    reference_strength: float = 0.5
 ) -> GenerationResult:
-    """Generate image using Stability AI API with SDXL (1024x1024). Tries multiple API keys if available."""
+    """Generate image using Stability AI API with SDXL (1024x1024). Tries multiple API keys if available.
+    If reference_image is provided, uses image-to-image mode."""
     if not STABILITY_API_KEYS:
         return GenerationResult(success=False, error_message="Stability API key not configured")
     
     last_error = None
+    use_img2img = reference_image is not None
+    
+    # For img2img, prepare the init image (resize to 1024x1024)
+    init_image_b64 = None
+    if use_img2img:
+        try:
+            init_img = Image.open(io.BytesIO(reference_image))
+            init_img = init_img.convert("RGB")
+            init_img = init_img.resize(SDXL_DIMENSIONS, Image.Resampling.LANCZOS)
+            buf = io.BytesIO()
+            init_img.save(buf, format="PNG")
+            init_image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            logger.info(f"Prepared reference image for img2img (strength: {reference_strength})")
+        except Exception as e:
+            logger.warning(f"Failed to prepare reference image: {e}, falling back to txt2img")
+            use_img2img = False
+    
+    # image_strength = 1 - reference_strength (Stability uses image_strength where 0 = keep original)
+    # Our reference_strength: 0 = ignore reference, 1 = follow strongly
+    # Stability init_image_mode/image_strength: lower = more influence from init image
+    image_strength = max(0.05, 1.0 - reference_strength)
     
     # Try each API key
     for i, api_key in enumerate(STABILITY_API_KEYS):
         try:
-            logger.info(f"Trying Stability API key {i + 1}/{len(STABILITY_API_KEYS)}...")
+            logger.info(f"Trying Stability API key {i + 1}/{len(STABILITY_API_KEYS)} ({'img2img' if use_img2img else 'txt2img'})...")
             
             async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.post(
-                    "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                        "Accept": "application/json"
-                    },
-                    json={
-                        "text_prompts": [
-                            {"text": prompt, "weight": 1},
-                            {"text": negative_prompt, "weight": -1}
-                        ],
-                        "cfg_scale": cfg_scale,
-                        "width": SDXL_DIMENSIONS[0],  # Must be 1024
-                        "height": SDXL_DIMENSIONS[1],  # Must be 1024
-                        "steps": steps,
-                        "samples": 1
-                    }
-                )
+                if use_img2img and init_image_b64:
+                    # Image-to-image endpoint
+                    response = await client.post(
+                        "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/image-to-image",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                            "Accept": "application/json"
+                        },
+                        json={
+                            "text_prompts": [
+                                {"text": prompt, "weight": 1},
+                                {"text": negative_prompt, "weight": -1}
+                            ],
+                            "init_image": init_image_b64,
+                            "init_image_mode": "IMAGE_STRENGTH",
+                            "image_strength": image_strength,
+                            "cfg_scale": cfg_scale,
+                            "steps": steps,
+                            "samples": 1
+                        }
+                    )
+                else:
+                    # Standard text-to-image
+                    response = await client.post(
+                        "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                            "Accept": "application/json"
+                        },
+                        json={
+                            "text_prompts": [
+                                {"text": prompt, "weight": 1},
+                                {"text": negative_prompt, "weight": -1}
+                            ],
+                            "cfg_scale": cfg_scale,
+                            "width": SDXL_DIMENSIONS[0],
+                            "height": SDXL_DIMENSIONS[1],
+                            "steps": steps,
+                            "samples": 1
+                        }
+                    )
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -445,13 +493,15 @@ async def generate_pixel_art(
     model_type: ModelType,
     user_prompt: str,
     target_size: str = "16x16",
-    provider: str = "auto"
+    provider: str = "auto",
+    reference_image: Optional[bytes] = None,
+    reference_strength: float = 0.5
 ) -> GenerationResult:
     """
     Main generation function.
     1. Enhance prompt with GPT if using prompt-agent
     2. Build appropriate prompt based on model type
-    3. Generate at higher resolution
+    3. Generate at higher resolution (optionally using reference image for img2img)
     4. Downscale to target pixel size
     
     Args:
@@ -459,6 +509,8 @@ async def generate_pixel_art(
         user_prompt: The user's prompt
         target_size: Target pixel size (e.g., "16x16")
         provider: AI provider to use ("auto", "stability", "openai")
+        reference_image: Optional reference image bytes for img2img
+        reference_strength: How strongly to follow the reference (0.0-1.0)
     """
     import time
     start_time = time.time()
@@ -493,7 +545,9 @@ async def generate_pixel_art(
                 prompt=full_prompt,
                 negative_prompt=negative_prompt,
                 steps=template["steps"],
-                cfg_scale=template["cfg_scale"]
+                cfg_scale=template["cfg_scale"],
+                reference_image=reference_image,
+                reference_strength=reference_strength
             )
             if result.success:
                 logger.info("Stability AI succeeded")
@@ -504,7 +558,7 @@ async def generate_pixel_art(
             errors.append("Stability: No API key configured")
             
     elif provider == "openai":
-        # Force OpenAI DALL-E only
+        # Force OpenAI DALL-E only (no img2img support)
         if OPENAI_API_KEY:
             logger.info("Using OpenAI DALL-E (user selected)...")
             result = await generate_with_openai(prompt=full_prompt)
@@ -524,7 +578,9 @@ async def generate_pixel_art(
                 prompt=full_prompt,
                 negative_prompt=negative_prompt,
                 steps=template["steps"],
-                cfg_scale=template["cfg_scale"]
+                cfg_scale=template["cfg_scale"],
+                reference_image=reference_image,
+                reference_strength=reference_strength
             )
             if result.success:
                 logger.info("Stability AI succeeded")

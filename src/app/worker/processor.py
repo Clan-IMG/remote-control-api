@@ -95,12 +95,32 @@ async def process_generation(request_data: dict) -> bool:
             generation.container_id = CONTAINER_ID
             await db.commit()
             
+            # Load reference image if provided
+            reference_image_bytes = None
+            reference_image_url = request_data.get("reference_image_url")
+            reference_strength = request_data.get("reference_strength", 0.5)
+            
+            if reference_image_url:
+                try:
+                    # Reference URL is like /uploads/references/ref_xxx.png
+                    ref_path = os.path.join(UPLOAD_DIR, reference_image_url.lstrip("/uploads/"))
+                    if os.path.exists(ref_path):
+                        with open(ref_path, "rb") as rf:
+                            reference_image_bytes = rf.read()
+                        logger.info(f"Loaded reference image from {ref_path} (strength: {reference_strength})")
+                    else:
+                        logger.warning(f"Reference image not found at {ref_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to load reference image: {e}")
+            
             # Generate the image
             result = await generate_pixel_art(
                 model_type=ModelType(request_data["model"]),
                 user_prompt=request_data["prompt"],
                 target_size=request_data.get("size", "16x16"),
-                provider=request_data.get("provider", "auto")
+                provider=request_data.get("provider", "auto"),
+                reference_image=reference_image_bytes,
+                reference_strength=reference_strength
             )
             
             if result.success:
