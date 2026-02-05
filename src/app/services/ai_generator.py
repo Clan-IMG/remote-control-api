@@ -126,72 +126,113 @@ def parse_size(size_str: str) -> tuple[int, int]:
     return int(parts[0]), int(parts[1])
 
 
+def _color_distance(c1: tuple, c2: tuple) -> float:
+    """Euclidean color distance in RGB space."""
+    return ((c1[0] - c2[0]) ** 2 + (c1[1] - c2[1]) ** 2 + (c1[2] - c2[2]) ** 2) ** 0.5
+
+
 def remove_background(img: Image.Image, tolerance: int = 30) -> Image.Image:
     """
-    Remove white/light gray background from image and make it transparent.
-    Works by detecting the background color from corners and removing similar colors.
+    Remove background using flood-fill from image edges.
+    
+    Only removes *connected* background regions that touch the image border,
+    so light-colored pixels inside the subject are preserved.
+    Uses BFS flood-fill starting from every border pixel whose color is
+    close to the detected background color.
     
     Args:
-        img: PIL Image in RGBA mode
-        tolerance: How much color difference to allow (0-255). Higher = more aggressive removal.
+        img: PIL Image (any mode, will be converted to RGBA)
+        tolerance: Euclidean RGB distance threshold (0–441). 30–50 works well.
     
     Returns:
-        Image with transparent background
+        Image with transparent background (PNG-ready RGBA)
     """
+    from collections import deque
+
     if img.mode != "RGBA":
         img = img.convert("RGBA")
-    
+
+    img = img.copy()  # don't mutate the original
     pixels = img.load()
     width, height = img.size
-    
-    # Sample corner pixels to detect background color
+
+    # --- 1. Detect background color from corner samples ---
     corners = [
-        (0, 0), (width-1, 0), (0, height-1), (width-1, height-1),
-        (1, 1), (width-2, 1), (1, height-2), (width-2, height-2)
+        (0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1),
+        (1, 0), (width - 2, 0), (0, 1), (width - 1, 1),
+        (1, height - 1), (width - 2, height - 1), (0, height - 2), (width - 1, height - 2),
     ]
-    
-    bg_colors = []
-    for x, y in corners:
-        if 0 <= x < width and 0 <= y < height:
-            bg_colors.append(pixels[x, y][:3])  # RGB only
-    
-    # Find the most common background color (usually white or light gray)
-    if bg_colors:
-        # Average the corner colors
-        avg_r = sum(c[0] for c in bg_colors) // len(bg_colors)
-        avg_g = sum(c[1] for c in bg_colors) // len(bg_colors)
-        avg_b = sum(c[2] for c in bg_colors) // len(bg_colors)
-        bg_color = (avg_r, avg_g, avg_b)
-    else:
-        bg_color = (255, 255, 255)  # Default to white
-    
-    # Check if background is actually light (white/gray) - only remove if it's a light background
-    brightness = (bg_color[0] + bg_color[1] + bg_color[2]) / 3
-    if brightness < 200:  # Background is not light enough, might be intentional
-        logger.info(f"Background color {bg_color} is not light enough, skipping removal")
+    bg_samples = [pixels[x, y][:3] for x, y in corners if 0 <= x < width and 0 <= y < height]
+
+    if not bg_samples:
         return img
-    
-    logger.info(f"Detected background color: {bg_color}, removing with tolerance {tolerance}")
-    
-    # Create new image with transparency
-    new_img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    new_pixels = new_img.load()
-    
+
+    avg_r = sum(c[0] for c in bg_samples) // len(bg_samples)
+    avg_g = sum(c[1] for c in bg_samples) // len(bg_samples)
+    avg_b = sum(c[2] for c in bg_samples) // len(bg_samples)
+    bg_color = (avg_r, avg_g, avg_b)
+
+    # Only remove light backgrounds (brightness > ~78 %)
+    brightness = (bg_color[0] + bg_color[1] + bg_color[2]) / 3
+    if brightness < 200:
+        logger.info(f"Background {bg_color} too dark (brightness {brightness:.0f}), skipping removal")
+        return img
+
+    logger.info(f"Flood-fill background removal: bg={bg_color}, tolerance={tolerance}")
+
+    # --- 2. Flood-fill from every border pixel ---
+    visited = [[False] * height for _ in range(width)]
+    queue: deque[tuple[int, int]] = deque()
+
+    def _is_bg(x: int, y: int) -> bool:
+        r, g, b, _a = pixels[x, y]
+        return _color_distance((r, g, b), bg_color) <= tolerance
+
+    # Seed: all border pixels that match the background color
+    for x in range(width):
+        for y in (0, height - 1):
+            if _is_bg(x, y):
+                queue.append((x, y))
+                visited[x][y] = True
+    for y in range(height):
+        for x in (0, width - 1):
+            if not visited[x][y] and _is_bg(x, y):
+                queue.append((x, y))
+                visited[x][y] = True
+
+    # BFS
+    while queue:
+        cx, cy = queue.popleft()
+        pixels[cx, cy] = (0, 0, 0, 0)  # make transparent
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            nx, ny = cx + dx, cy + dy
+            if 0 <= nx < width and 0 <= ny < height and not visited[nx][ny]:
+                visited[nx][ny] = True
+                if _is_bg(nx, ny):
+                    queue.append((nx, ny))
+
+    # --- 3. Optional: soften edges (anti-alias cleanup) ---
+    # Pixels that border a transparent pixel but are close to bg get partial alpha
     for y in range(height):
         for x in range(width):
             r, g, b, a = pixels[x, y]
-            
-            # Calculate color distance from background
-            dist = abs(r - bg_color[0]) + abs(g - bg_color[1]) + abs(b - bg_color[2])
-            
-            if dist <= tolerance:
-                # This pixel is close to background color - make transparent
-                new_pixels[x, y] = (0, 0, 0, 0)
-            else:
-                # Keep the pixel
-                new_pixels[x, y] = (r, g, b, a)
-    
-    return new_img
+            if a == 0:
+                continue
+            # Check if any neighbor is transparent
+            has_transparent_neighbor = False
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < width and 0 <= ny < height and pixels[nx, ny][3] == 0:
+                    has_transparent_neighbor = True
+                    break
+            if has_transparent_neighbor:
+                dist = _color_distance((r, g, b), bg_color)
+                if dist <= tolerance * 1.5:
+                    # Fade alpha proportionally: closer to bg = more transparent
+                    alpha_ratio = min(dist / (tolerance * 1.5), 1.0)
+                    pixels[x, y] = (r, g, b, int(alpha_ratio * 255))
+
+    return img
 
 
 def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: int, remove_bg: bool = True) -> bytes:
@@ -211,18 +252,18 @@ def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: 
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     
-    # Remove background before downscaling (better quality)
+    # Remove background on full-res image first (better accuracy)
     if remove_bg:
-        img = remove_background(img, tolerance=30)
+        img = remove_background(img, tolerance=35)
     
     # Downscale using NEAREST to keep pixel art crisp
     img_small = img.resize((target_width, target_height), Image.Resampling.NEAREST)
     
-    # If we removed background, do a second pass on the small image to clean up edges
+    # Second pass on the small image to clean up any leftover edge artifacts
     if remove_bg:
-        img_small = remove_background(img_small, tolerance=20)
+        img_small = remove_background(img_small, tolerance=25)
     
-    # Save to bytes
+    # Save to bytes as PNG (preserves alpha channel)
     output = io.BytesIO()
     img_small.save(output, format="PNG")
     return output.getvalue()
