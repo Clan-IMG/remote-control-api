@@ -71,6 +71,29 @@ app.add_middleware(
 )
 
 
+# Ensure CORS header is present on *all* responses (including errors from upstream)
+@app.middleware("http")
+async def ensure_cors_header(request, call_next):
+    response = await call_next(request)
+    try:
+        # If configured origins include a wildcard, set wildcard; otherwise reflect allowed origins
+        if isinstance(CORS_ORIGINS, list) and ("*" in CORS_ORIGINS or CORS_ORIGINS == ["*"]):
+            response.headers.setdefault("Access-Control-Allow-Origin", "*")
+        else:
+            # Prefer the request Origin if it's in our allowed list
+            origin = request.headers.get("origin")
+            if origin and origin in CORS_ORIGINS:
+                response.headers.setdefault("Access-Control-Allow-Origin", origin)
+            else:
+                # Fallback to first configured origin
+                if isinstance(CORS_ORIGINS, list) and len(CORS_ORIGINS) > 0:
+                    response.headers.setdefault("Access-Control-Allow-Origin", CORS_ORIGINS[0])
+    except Exception:
+        # Never fail the request because of header setting
+        pass
+    return response
+
+
 # ========== Static Files ==========
 
 # Serve uploaded images
