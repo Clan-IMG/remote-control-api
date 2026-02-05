@@ -123,10 +123,84 @@ def parse_size(size_str: str) -> tuple[int, int]:
     return int(parts[0]), int(parts[1])
 
 
-def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: int) -> bytes:
+def remove_background(img: Image.Image, tolerance: int = 30) -> Image.Image:
+    """
+    Remove white/light gray background from image and make it transparent.
+    Works by detecting the background color from corners and removing similar colors.
+    
+    Args:
+        img: PIL Image in RGBA mode
+        tolerance: How much color difference to allow (0-255). Higher = more aggressive removal.
+    
+    Returns:
+        Image with transparent background
+    """
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+    
+    pixels = img.load()
+    width, height = img.size
+    
+    # Sample corner pixels to detect background color
+    corners = [
+        (0, 0), (width-1, 0), (0, height-1), (width-1, height-1),
+        (1, 1), (width-2, 1), (1, height-2), (width-2, height-2)
+    ]
+    
+    bg_colors = []
+    for x, y in corners:
+        if 0 <= x < width and 0 <= y < height:
+            bg_colors.append(pixels[x, y][:3])  # RGB only
+    
+    # Find the most common background color (usually white or light gray)
+    if bg_colors:
+        # Average the corner colors
+        avg_r = sum(c[0] for c in bg_colors) // len(bg_colors)
+        avg_g = sum(c[1] for c in bg_colors) // len(bg_colors)
+        avg_b = sum(c[2] for c in bg_colors) // len(bg_colors)
+        bg_color = (avg_r, avg_g, avg_b)
+    else:
+        bg_color = (255, 255, 255)  # Default to white
+    
+    # Check if background is actually light (white/gray) - only remove if it's a light background
+    brightness = (bg_color[0] + bg_color[1] + bg_color[2]) / 3
+    if brightness < 200:  # Background is not light enough, might be intentional
+        logger.info(f"Background color {bg_color} is not light enough, skipping removal")
+        return img
+    
+    logger.info(f"Detected background color: {bg_color}, removing with tolerance {tolerance}")
+    
+    # Create new image with transparency
+    new_img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    new_pixels = new_img.load()
+    
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = pixels[x, y]
+            
+            # Calculate color distance from background
+            dist = abs(r - bg_color[0]) + abs(g - bg_color[1]) + abs(b - bg_color[2])
+            
+            if dist <= tolerance:
+                # This pixel is close to background color - make transparent
+                new_pixels[x, y] = (0, 0, 0, 0)
+            else:
+                # Keep the pixel
+                new_pixels[x, y] = (r, g, b, a)
+    
+    return new_img
+
+
+def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: int, remove_bg: bool = True) -> bytes:
     """
     Downscale image to target pixel size using nearest neighbor resampling.
     This preserves the crisp pixel art look.
+    
+    Args:
+        image_data: Raw image bytes
+        target_width: Target pixel width
+        target_height: Target pixel height
+        remove_bg: Whether to remove white/gray background and make transparent
     """
     img = Image.open(io.BytesIO(image_data))
     
@@ -134,8 +208,16 @@ def downscale_to_pixel_art(image_data: bytes, target_width: int, target_height: 
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     
+    # Remove background before downscaling (better quality)
+    if remove_bg:
+        img = remove_background(img, tolerance=30)
+    
     # Downscale using NEAREST to keep pixel art crisp
     img_small = img.resize((target_width, target_height), Image.Resampling.NEAREST)
+    
+    # If we removed background, do a second pass on the small image to clean up edges
+    if remove_bg:
+        img_small = remove_background(img_small, tolerance=20)
     
     # Save to bytes
     output = io.BytesIO()

@@ -1,31 +1,31 @@
 {
-    "prompt_enhancement_system": "You are an expert at creating detailed, high-quality prompts for AI image generation, specifically for Minecraft-style 16-bit pixel art.\n\nYour task is to take a simple user prompt and enhance it into a detailed, descriptive prompt that will generate beautiful pixel art.\n\nGuidelines:\n- Keep the Minecraft/pixel art style focus\n- Add specific details about colors, lighting, composition\n- Mention pixel art techniques: clean edges, flat colors, no gradients, crisp pixels\n- Keep it concise but descriptive (max 100 words)\n- Always include: \"16-bit pixel art, Minecraft style, clean pixels, flat colors\"\n- Do NOT add any explanations, just output the enhanced prompt\n\nExample:\nUser: \"a blue sword\"\nEnhanced: \"16-bit pixel art Minecraft diamond sword, brilliant blue crystalline blade with cyan highlights, dark iron handle with leather grip details, magical sparkle particles, clean pixel edges, flat colors, game item icon style, isolated on transparent background\"",
+    "prompt_enhancement_system": "You are an expert at creating detailed, high-quality prompts for AI image generation, specifically for Minecraft-style 16-bit pixel art.\n\nYour task is to take a simple user prompt and enhance it into a detailed, descriptive prompt that will generate beautiful pixel art.\n\nGuidelines:\n- Keep the Minecraft/pixel art style focus\n- Add specific details about colors, lighting, composition\n- Mention pixel art techniques: clean edges, flat colors, no gradients, crisp pixels\n- Keep it concise but descriptive (max 100 words)\n- Always include: \"16-bit pixel art, Minecraft style, clean pixels, flat colors\"\n- IMPORTANT: Always specify \"pure white background, solid white background\" for easy background removal\n- Do NOT add any explanations, just output the enhanced prompt\n\nExample:\nUser: \"a blue sword\"\nEnhanced: \"16-bit pixel art Minecraft diamond sword, brilliant blue crystalline blade with cyan highlights, dark iron handle with leather grip details, magical sparkle particles, clean pixel edges, flat colors, game item icon style, isolated on pure white background, solid white background\"",
 
     "model_prompts": {
         "block-agent": {
-            "base": "minecraft block texture, 2D front view, flat design, pixel art style, seamless tileable texture, {user_prompt}, clean edges, no gradients, game asset, isolated on transparent background",
-            "negative": "3d, perspective, shading, gradient, blurry, noise, realistic, photo, complex details, text, watermark, signature",
+            "base": "minecraft block texture, 2D front view, flat design, pixel art style, seamless tileable texture, {user_prompt}, clean edges, no gradients, game asset, isolated on pure white background, solid white background",
+            "negative": "3d, perspective, shading, gradient, blurry, noise, realistic, photo, complex details, text, watermark, signature, transparent, checkered background, gray background",
             "steps": 30,
             "cfg_scale": 7,
             "enhance_prompt": false
         },
         "item-agent": {
-            "base": "single isolated {user_prompt} icon, Minecraft style, 16-bit pixel art, pixelated, 2D flat vector, sprite sheet style, sharp jagged pixel edges, high contrast, vibrant colors, white background, masterpiece",
-            "negative": "blurry, soft edges, gradient, 3D, realistic, shadow, border, frame, merged with background, messy pixels, multiple items, distorted shape",
+            "base": "single isolated {user_prompt} icon, Minecraft style, 16-bit pixel art, pixelated, 2D flat vector, sprite sheet style, sharp jagged pixel edges, high contrast, vibrant colors, pure white background, solid white background, masterpiece",
+            "negative": "blurry, soft edges, gradient, 3D, realistic, shadow, border, frame, merged with background, messy pixels, multiple items, distorted shape, transparent, checkered background, gray background",
             "steps": 25,
             "cfg_scale": 9.5,
             "enhance_prompt": true
         },
         "armor-agent": {
-            "base": "minecraft armor piece, pixel art sprite, bit style, {user_prompt}, front facing, flat colors, clean edges, game character equipment, isolated on transparent background",
-            "negative": "3d, realistic, photo, gradient, blur, complex details, text, watermark, background scenery",
+            "base": "minecraft armor piece, pixel art sprite, bit style, {user_prompt}, front facing, flat colors, clean edges, game character equipment, isolated on pure white background, solid white background",
+            "negative": "3d, realistic, photo, gradient, blur, complex details, text, watermark, background scenery, transparent, checkered background, gray background",
             "steps": 30,
             "cfg_scale": 7,
             "enhance_prompt": false
         },
         "prompt-agent": {
-            "base": "{user_prompt}, Minecraft style, 16-bit pixel art, pixelated, clean pixel edges, flat colors, vibrant colors, white background",
-            "negative": "blurry, soft edges, gradient, 3D, realistic, shadow, messy pixels, distorted",
+            "base": "{user_prompt}, Minecraft style, 16-bit pixel art, pixelated, clean pixel edges, flat colors, vibrant colors, pure white background, solid white background",
+            "negative": "blurry, soft edges, gradient, 3D, realistic, shadow, messy pixels, distorted, transparent, checkered background, gray background",
             "steps": 25,
             "cfg_scale": 8,
             "enhance_prompt": true
