@@ -71,7 +71,8 @@ async def list_public_gallery(
             likes=gallery.likes,
             downloads=gallery.downloads,
             created_at=generation.created_at,
-            username=user.username
+            username=user.username,
+            avatar_url=user.avatar_url
         )
         for generation, gallery, user in rows
     ]

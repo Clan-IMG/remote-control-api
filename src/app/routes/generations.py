@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 from pydantic import BaseModel
 from src.app.database import get_db
 from src.app.redis_client import get_redis, QUEUE_PENDING, KEY_REQUEST_PREFIX
-from src.app.models import User, Generation, ModelType, RequestStatus
+from src.app.models import User, Generation, ModelType, RequestStatus, PublicGallery
 from src.app.schemas import (
     GenerationRequest, GenerationResponse, GenerationQueueResponse, GenerationListResponse
 )
@@ -24,6 +24,10 @@ class EnhancePromptRequest(BaseModel):
 class EnhancePromptResponse(BaseModel):
     original: str
     enhanced: str
+
+
+class UpdateVisibilityRequest(BaseModel):
+    is_public: bool
 
 
 @router.post("/enhance-prompt", response_model=EnhancePromptResponse)
@@ -233,7 +237,7 @@ async def list_generations(
 @router.patch("/{generation_id}/visibility")
 async def update_visibility(
     generation_id: str,
-    is_public: bool,
+    request: UpdateVisibilityRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -251,10 +255,27 @@ async def update_visibility(
             detail="Generation not found"
         )
     
-    generation.is_public = is_public
+    generation.is_public = request.is_public
+
+    # Manage PublicGallery entry
+    if request.is_public:
+        # Check if exists
+        gallery_entry = await db.execute(
+            select(PublicGallery).where(PublicGallery.generation_id == generation.id)
+        )
+        if not gallery_entry.scalar_one_or_none():
+            # Create entry
+            new_gallery_item = PublicGallery(
+                generation_id=generation.id,
+                title=generation.prompt[:100] if generation.prompt else "Untitled",
+                likes=0,
+                downloads=0
+            )
+            db.add(new_gallery_item)
+
     await db.commit()
     
-    return {"success": True, "is_public": is_public}
+    return {"success": True, "is_public": request.is_public}
 
 
 @router.delete("/{generation_id}", status_code=status.HTTP_204_NO_CONTENT)

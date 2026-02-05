@@ -68,3 +68,15 @@ async def get_current_active_user(
             detail="User account is deactivated"
         )
     return current_user
+
+
+async def get_current_admin(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """Ensure user is admin"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The user doesn't have enough privileges"
+        )
+    return current_user

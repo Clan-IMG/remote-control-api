@@ -18,6 +18,9 @@ class ModelType(str, enum.Enum):
     ITEM_AGENT = "item-agent"
     ARMOR_AGENT = "armor-agent"
     PROMPT_AGENT = "prompt-agent"
+    PICTURE_AGENT = "picture-agent"
+    LOGO_AGENT_2D = "logo-agent-2d"
+    LOGO_AGENT_3D = "logo-agent-3d"
 
 
 class User(Base):
@@ -30,11 +33,24 @@ class User(Base):
     avatar_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
+    login_enabled = Column(Boolean, default=False)
+    is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     api_keys = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan")
     generations = relationship("Generation", back_populates="user", cascade="all, delete-orphan")
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key = Column(String(50), primary_key=True)
+    value = Column(String(255), nullable=True)
+    is_boolean = Column(Boolean, default=False)
+    description = Column(String(255), nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
 
 
 class ApiKey(Base):

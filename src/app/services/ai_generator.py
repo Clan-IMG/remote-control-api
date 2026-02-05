@@ -59,6 +59,9 @@ _MODEL_TYPE_MAP = {
     "item-agent": ModelType.ITEM_AGENT,
     "armor-agent": ModelType.ARMOR_AGENT,
     "prompt-agent": ModelType.PROMPT_AGENT,
+    "picture-agent": ModelType.PICTURE_AGENT,
+    "logo-agent-2d": ModelType.LOGO_AGENT_2D,
+    "logo-agent-3d": ModelType.LOGO_AGENT_3D,
 }
 
 MODEL_PROMPTS = {

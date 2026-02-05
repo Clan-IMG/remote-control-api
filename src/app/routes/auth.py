@@ -6,10 +6,11 @@ import os
 import uuid
 import aiofiles
 from src.app.database import get_db
-from src.app.models import User, ApiKey
+from src.app.models import User, ApiKey, SystemSetting
 from src.app.schemas import (
     UserRegister, UserLogin, UserResponse, TokenResponse,
-    ApiKeyCreate, ApiKeyResponse, ApiKeyCreated, ProfileUpdate
+    ApiKeyCreate, ApiKeyResponse, ApiKeyCreated, ProfileUpdate,
+    RefreshTokenRequest
 )
 from src.app.auth import (
     hash_password, authenticate_user, create_access_token, 
@@ -48,11 +49,23 @@ async def register(
             detail="Username already taken"
         )
     
+    # Check public registration setting
+    registration_setting = await db.execute(
+        select(SystemSetting).where(SystemSetting.key == "public_registration")
+    )
+    setting = registration_setting.scalar_one_or_none()
+    
+    # Default to False (Private Beta) unless explicitly enabled
+    login_enabled = False
+    if setting and setting.value and setting.value.lower() == "true":
+        login_enabled = True
+    
     # Create user
     user = User(
         email=user_data.email,
         username=user_data.username,
-        password_hash=hash_password(user_data.password)
+        password_hash=hash_password(user_data.password),
+        login_enabled=login_enabled
     )
     db.add(user)
     await db.commit()
@@ -80,6 +93,12 @@ async def login(
             detail="Account is deactivated"
         )
     
+    if not user.login_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account requires approval (Private Beta)"
+        )
+    
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
     
@@ -92,11 +111,11 @@ async def login(
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
-    refresh_token: str,
+    request: RefreshTokenRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """Refresh access token using refresh token"""
-    user_id = verify_token(refresh_token, token_type="refresh")
+    user_id = verify_token(request.refresh_token, token_type="refresh")
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

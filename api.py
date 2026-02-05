@@ -23,6 +23,8 @@ from src.app.routes.health import router as health_router
 from src.app.routes.auth import router as auth_router
 from src.app.routes.generations import router as generations_router
 from src.app.routes.gallery import router as gallery_router
+from src.app.routes.admin import router as admin_router
+from src.app.routes.stats import router as stats_router
 
 
 # ========== Lifespan ==========
@@ -62,8 +64,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=600,  # Cache preflight requests for 10 minutes
 )
 
 
@@ -87,3 +91,11 @@ app.include_router(generations_router)
 
 # Public Gallery
 app.include_router(gallery_router)
+
+# Admin Routes
+app.include_router(admin_router)
+
+
+# Stats
+app.include_router(stats_router)
+

@@ -11,6 +11,9 @@ class ModelTypeEnum(str, Enum):
     ITEM_AGENT = "item-agent"
     ARMOR_AGENT = "armor-agent"
     PROMPT_AGENT = "prompt-agent"
+    PICTURE_AGENT = "picture-agent"
+    LOGO_AGENT_2D = "logo-agent-2d"
+    LOGO_AGENT_3D = "logo-agent-3d"
     CUSTOM = "custom"
 
 
@@ -62,6 +65,10 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 
 # ========== API Key Schemas ==========
@@ -144,6 +151,7 @@ class GalleryItemResponse(BaseModel):
     downloads: int
     created_at: datetime
     username: str
+    avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -184,3 +192,23 @@ class HealthResponse(BaseModel):
     redis_connected: bool
     database_connected: bool
     active_containers: int
+
+# ========== System/Admin Schemas ==========
+
+class SystemSettingUpdate(BaseModel):
+    key: str
+    value: str
+
+class SystemSettingResponse(BaseModel):
+    key: str
+    value: Optional[str]
+    description: Optional[str]
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class UserApprovalUpdate(BaseModel):
+    user_id: str
+    login_enabled: bool
+
