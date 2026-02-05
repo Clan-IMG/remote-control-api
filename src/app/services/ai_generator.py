@@ -278,15 +278,15 @@ async def generate_with_stability(
     reference_strength: float = 0.5
 ) -> GenerationResult:
     """Generate image using Stability AI API with SDXL (1024x1024). Tries multiple API keys if available.
-    If reference_image is provided, uses image-to-image mode."""
+    If reference_image is provided, uses image-to-image mode with multipart/form-data."""
     if not STABILITY_API_KEYS:
         return GenerationResult(success=False, error_message="Stability API key not configured")
     
     last_error = None
     use_img2img = reference_image is not None
     
-    # For img2img, prepare the init image (resize to 1024x1024)
-    init_image_b64 = None
+    # For img2img, prepare the init image (resize to 1024x1024 PNG)
+    init_image_bytes = None
     if use_img2img:
         try:
             init_img = Image.open(io.BytesIO(reference_image))
@@ -294,16 +294,17 @@ async def generate_with_stability(
             init_img = init_img.resize(SDXL_DIMENSIONS, Image.Resampling.LANCZOS)
             buf = io.BytesIO()
             init_img.save(buf, format="PNG")
-            init_image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-            logger.info(f"Prepared reference image for img2img (strength: {reference_strength})")
+            init_image_bytes = buf.getvalue()
+            logger.info(f"Prepared reference image for img2img (strength: {reference_strength}, size: {len(init_image_bytes)} bytes)")
         except Exception as e:
             logger.warning(f"Failed to prepare reference image: {e}, falling back to txt2img")
             use_img2img = False
     
-    # image_strength = 1 - reference_strength (Stability uses image_strength where 0 = keep original)
+    # image_strength mapping:
     # Our reference_strength: 0 = ignore reference, 1 = follow strongly
-    # Stability init_image_mode/image_strength: lower = more influence from init image
-    image_strength = max(0.05, 1.0 - reference_strength)
+    # Stability image_strength: 0 = keep original exactly, 1 = ignore original completely
+    # So: image_strength = 1 - reference_strength
+    image_strength = max(0.05, min(0.95, 1.0 - reference_strength))
     
     # Try each API key
     for i, api_key in enumerate(STABILITY_API_KEYS):
@@ -311,30 +312,31 @@ async def generate_with_stability(
             logger.info(f"Trying Stability API key {i + 1}/{len(STABILITY_API_KEYS)} ({'img2img' if use_img2img else 'txt2img'})...")
             
             async with httpx.AsyncClient(timeout=120.0) as client:
-                if use_img2img and init_image_b64:
-                    # Image-to-image endpoint
+                if use_img2img and init_image_bytes:
+                    # Image-to-image: Stability requires multipart/form-data
+                    form_data = {
+                        "init_image": ("reference.png", init_image_bytes, "image/png"),
+                        "init_image_mode": (None, "IMAGE_STRENGTH"),
+                        "image_strength": (None, str(image_strength)),
+                        "text_prompts[0][text]": (None, prompt),
+                        "text_prompts[0][weight]": (None, "1"),
+                        "text_prompts[1][text]": (None, negative_prompt),
+                        "text_prompts[1][weight]": (None, "-1"),
+                        "cfg_scale": (None, str(cfg_scale)),
+                        "steps": (None, str(steps)),
+                        "samples": (None, "1"),
+                    }
+                    
                     response = await client.post(
                         "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/image-to-image",
                         headers={
                             "Authorization": f"Bearer {api_key}",
-                            "Content-Type": "application/json",
                             "Accept": "application/json"
                         },
-                        json={
-                            "text_prompts": [
-                                {"text": prompt, "weight": 1},
-                                {"text": negative_prompt, "weight": -1}
-                            ],
-                            "init_image": init_image_b64,
-                            "init_image_mode": "IMAGE_STRENGTH",
-                            "image_strength": image_strength,
-                            "cfg_scale": cfg_scale,
-                            "steps": steps,
-                            "samples": 1
-                        }
+                        files=form_data
                     )
                 else:
-                    # Standard text-to-image
+                    # Standard text-to-image (JSON)
                     response = await client.post(
                         "https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image",
                         headers={
@@ -450,11 +452,73 @@ async def generate_with_replicate(
 
 
 async def generate_with_openai(
-    prompt: str
+    prompt: str,
+    reference_image: Optional[bytes] = None,
+    reference_strength: float = 0.5
 ) -> GenerationResult:
-    """Generate image using OpenAI DALL-E API"""
+    """Generate image using OpenAI DALL-E API.
+    If reference_image is provided, uses GPT-4o-mini vision to analyse the reference
+    and enriches the prompt with a visual description so DALL-E follows it."""
     if not OPENAI_API_KEY:
         return GenerationResult(success=False, error_message="OpenAI API key not configured")
+    
+    final_prompt = prompt
+    
+    # If reference image provided, describe it with GPT-4o-mini vision and merge into prompt
+    if reference_image is not None:
+        try:
+            # Resize to small JPEG to keep token cost low
+            ref_img = Image.open(io.BytesIO(reference_image))
+            ref_img = ref_img.convert("RGB")
+            ref_img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+            buf = io.BytesIO()
+            ref_img.save(buf, format="JPEG", quality=80)
+            ref_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            
+            strength_word = "loosely inspired by"
+            if reference_strength >= 0.75:
+                strength_word = "very closely matching"
+            elif reference_strength >= 0.5:
+                strength_word = "closely following the style and colors of"
+            elif reference_strength >= 0.25:
+                strength_word = "somewhat inspired by"
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                vision_response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {OPENAI_API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": "gpt-4o-mini",
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You are an image description assistant. Describe the key visual elements of this reference image in 2-3 sentences: main colors, shapes, style, composition, and notable features. Be specific and concise. Output ONLY the description, no preamble."
+                            },
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": "Describe this reference image:"},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{ref_b64}", "detail": "low"}}
+                                ]
+                            }
+                        ],
+                        "max_tokens": 150,
+                        "temperature": 0.3
+                    }
+                )
+                
+                if vision_response.status_code == 200:
+                    description = vision_response.json()["choices"][0]["message"]["content"].strip()
+                    final_prompt = f"{prompt}. The result should be {strength_word} this reference: {description}"
+                    logger.info(f"OpenAI reference description: {description[:100]}...")
+                else:
+                    logger.warning(f"GPT-4o vision failed ({vision_response.status_code}), using prompt without reference")
+                    
+        except Exception as e:
+            logger.warning(f"Reference image analysis failed: {e}, using prompt without reference")
     
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -466,7 +530,7 @@ async def generate_with_openai(
                 },
                 json={
                     "model": "dall-e-3",
-                    "prompt": prompt,
+                    "prompt": final_prompt,
                     "n": 1,
                     "size": "1024x1024",
                     "response_format": "b64_json"
@@ -558,10 +622,14 @@ async def generate_pixel_art(
             errors.append("Stability: No API key configured")
             
     elif provider == "openai":
-        # Force OpenAI DALL-E only (no img2img support)
+        # Force OpenAI DALL-E (uses GPT-4o vision to describe reference for prompt enrichment)
         if OPENAI_API_KEY:
             logger.info("Using OpenAI DALL-E (user selected)...")
-            result = await generate_with_openai(prompt=full_prompt)
+            result = await generate_with_openai(
+                prompt=full_prompt,
+                reference_image=reference_image,
+                reference_strength=reference_strength
+            )
             if result.success:
                 logger.info("OpenAI DALL-E succeeded")
             else:
@@ -606,7 +674,11 @@ async def generate_pixel_art(
         # Fallback to OpenAI
         if not result.success and OPENAI_API_KEY:
             logger.info("Falling back to OpenAI DALL-E...")
-            result = await generate_with_openai(prompt=full_prompt)
+            result = await generate_with_openai(
+                prompt=full_prompt,
+                reference_image=reference_image,
+                reference_strength=reference_strength
+            )
             if result.success:
                 logger.info("OpenAI DALL-E succeeded")
             else:
