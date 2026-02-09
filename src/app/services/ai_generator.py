@@ -275,7 +275,7 @@ async def generate_with_stability(
     steps: int = 30,
     cfg_scale: float = 7,
     reference_image: Optional[bytes] = None,
-    reference_strength: float = 0.5
+    reference_strength: Optional[float] = 0.5
 ) -> GenerationResult:
     """Generate image using Stability AI API with SDXL (1024x1024). Tries multiple API keys if available.
     If reference_image is provided, uses image-to-image mode with multipart/form-data."""
@@ -300,6 +300,16 @@ async def generate_with_stability(
             logger.warning(f"Failed to prepare reference image: {e}, falling back to txt2img")
             use_img2img = False
     
+    # Normalize reference_strength: allow callers to pass None and coerce to a valid float
+    if reference_strength is None:
+        reference_strength = 0.5
+    try:
+        reference_strength = float(reference_strength)
+    except Exception:
+        reference_strength = 0.5
+    # Clamp to valid range
+    reference_strength = max(0.0, min(1.0, reference_strength))
+
     # image_strength mapping:
     # Our reference_strength: 0 = ignore reference, 1 = follow strongly
     # Stability image_strength: 0 = keep original exactly, 1 = ignore original completely
@@ -454,7 +464,7 @@ async def generate_with_replicate(
 async def generate_with_openai(
     prompt: str,
     reference_image: Optional[bytes] = None,
-    reference_strength: float = 0.5
+    reference_strength: Optional[float] = 0.5
 ) -> GenerationResult:
     """Generate image using OpenAI DALL-E API.
     If reference_image is provided, uses GPT-4o-mini vision to analyse the reference
@@ -462,6 +472,15 @@ async def generate_with_openai(
     if not OPENAI_API_KEY:
         return GenerationResult(success=False, error_message="OpenAI API key not configured")
     
+    # Normalize reference_strength early so downstream comparisons are safe
+    if reference_strength is None:
+        reference_strength = 0.5
+    try:
+        reference_strength = float(reference_strength)
+    except Exception:
+        reference_strength = 0.5
+    reference_strength = max(0.0, min(1.0, reference_strength))
+
     final_prompt = prompt
     
     # If reference image provided, describe it with GPT-4o-mini vision and merge into prompt
@@ -594,7 +613,7 @@ async def generate_pixel_art(
     target_size: str = "16x16",
     provider: str = "auto",
     reference_image: Optional[bytes] = None,
-    reference_strength: float = 0.5
+    reference_strength: Optional[float] = 0.5
 ) -> GenerationResult:
     """
     Main generation function.
@@ -614,6 +633,15 @@ async def generate_pixel_art(
     import time
     start_time = time.time()
     
+    # Normalize reference_strength early so callers passing None don't break comparisons
+    if reference_strength is None:
+        reference_strength = 0.5
+    try:
+        reference_strength = float(reference_strength)
+    except Exception:
+        reference_strength = 0.5
+    reference_strength = max(0.0, min(1.0, reference_strength))
+
     # Get template settings
     template = MODEL_PROMPTS.get(model_type, MODEL_PROMPTS[ModelType.ITEM_AGENT])
     

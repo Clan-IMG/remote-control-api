@@ -15,6 +15,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,https://pixelkid.app}
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-4}
       - STABILITY_API_KEY=${STABILITY_API_KEY}
       - REPLICATE_API_KEY=${REPLICATE_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
