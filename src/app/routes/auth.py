@@ -74,7 +74,7 @@ async def register(
     # If registrations are closed (private beta), return a friendly message
     if not login_enabled:
         return RegistrationResponse(
-            message="Account created — approval required. The team will enable your account shortly.",
+            message=f"To get free access, please message WrobelXXL on Discord: https://discord.gg/D9tgwpb65e",
             user=None
         )
 
@@ -107,7 +107,7 @@ async def login(
     if not user.login_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account requires approval (Private Beta)"
+            detail="To get free access, please message WrobelXXL on Discord: https://discord.gg/D9tgwpb65e"
         )
     
     access_token = create_access_token(user.id)
