@@ -110,6 +110,7 @@ async def create_generation(
         is_public=request.is_public,
         reference_image_url=request.reference_image_url,
         reference_strength=request.reference_strength if request.reference_image_url else None,
+        logo_text=request.logo_text,
         status=RequestStatus.PENDING
     )
     db.add(generation)
@@ -128,6 +129,7 @@ async def create_generation(
         "reference_image_url": request.reference_image_url,
         "reference_strength": request.reference_strength if request.reference_image_url else None,
         "remove_bg": request.remove_bg,
+        "logo_text": request.logo_text,
         "created_at": datetime.utcnow().isoformat()
     }
     
@@ -185,6 +187,7 @@ async def get_generation(
         image_url=generation.image_url,
         reference_image_url=generation.reference_image_url,
         reference_strength=generation.reference_strength,
+        logo_text=generation.logo_text,
         error_message=generation.error_message,
         processing_time_ms=generation.processing_time_ms,
         created_at=generation.created_at,
@@ -270,6 +273,7 @@ async def list_generations(
             image_url=g.image_url,
             reference_image_url=g.reference_image_url,
             reference_strength=g.reference_strength,
+            logo_text=g.logo_text,
             error_message=g.error_message,
             processing_time_ms=g.processing_time_ms,
             created_at=g.created_at,

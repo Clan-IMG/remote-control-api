@@ -116,6 +116,7 @@ class GenerationRequest(BaseModel):
     reference_image_url: Optional[str] = None  # URL of uploaded reference image
     reference_strength: float = Field(default=0.5, ge=0.0, le=1.0)  # How much to follow the reference
     remove_bg: bool = True  # Whether to remove background (make transparent)
+    logo_text: Optional[str] = Field(default=None, max_length=50)  # Exact text to render in logo
 
 
 class GenerationResponse(BaseModel):
@@ -128,6 +129,7 @@ class GenerationResponse(BaseModel):
     image_url: Optional[str]
     reference_image_url: Optional[str] = None
     reference_strength: Optional[float] = None
+    logo_text: Optional[str] = None
     error_message: Optional[str]
     processing_time_ms: Optional[int]
     created_at: datetime

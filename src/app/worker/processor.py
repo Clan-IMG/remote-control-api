@@ -122,7 +122,8 @@ async def process_generation(request_data: dict) -> bool:
                 provider=request_data.get("provider", "auto"),
                 reference_image=reference_image_bytes,
                 reference_strength=reference_strength,
-                remove_bg=request_data.get("remove_bg", True)
+                remove_bg=request_data.get("remove_bg", True),
+                logo_text=request_data.get("logo_text")
             )
             
             if result.success:

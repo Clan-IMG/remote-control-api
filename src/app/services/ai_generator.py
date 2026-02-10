@@ -614,7 +614,8 @@ async def generate_pixel_art(
     provider: str = "auto",
     reference_image: Optional[bytes] = None,
     reference_strength: Optional[float] = 0.5,
-    remove_bg: bool = True
+    remove_bg: bool = True,
+    logo_text: Optional[str] = None
 ) -> GenerationResult:
     """
     Main generation function.
@@ -631,6 +632,7 @@ async def generate_pixel_art(
         reference_image: Optional reference image bytes for img2img
         reference_strength: How strongly to follow the reference (0.0-1.0)
         remove_bg: Whether to remove background and make transparent
+        logo_text: Optional exact text to render in logo (for logo agents)
     """
     import time
     start_time = time.time()
@@ -662,6 +664,12 @@ async def generate_pixel_art(
     
     # Build prompts
     full_prompt, negative_prompt = build_prompt(model_type, working_prompt)
+    
+    # Inject logo_text for logo agents
+    if logo_text and model_type in (ModelType.LOGO_AGENT_2D, ModelType.LOGO_AGENT_3D):
+        logo_instruction = f'The logo must display the exact readable text "{logo_text}" in clear, legible pixel font with correct spelling. '
+        full_prompt = logo_instruction + full_prompt
+        logger.info(f"Injected logo_text: '{logo_text}'")
     
     # Parse target size
     target_width, target_height = parse_size(target_size)
