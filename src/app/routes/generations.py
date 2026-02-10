@@ -110,6 +110,7 @@ async def create_generation(
         is_public=request.is_public,
         reference_image_url=request.reference_image_url,
         reference_strength=request.reference_strength if request.reference_image_url else None,
+        remove_bg=request.remove_bg,
         logo_text=request.logo_text,
         status=RequestStatus.PENDING
     )

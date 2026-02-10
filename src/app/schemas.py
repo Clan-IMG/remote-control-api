@@ -129,6 +129,7 @@ class GenerationResponse(BaseModel):
     image_url: Optional[str]
     reference_image_url: Optional[str] = None
     reference_strength: Optional[float] = None
+    remove_bg: bool = True
     logo_text: Optional[str] = None
     error_message: Optional[str]
     processing_time_ms: Optional[int]

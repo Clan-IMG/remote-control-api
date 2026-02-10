@@ -85,6 +85,7 @@ class Generation(Base):
     is_public = Column(Boolean, default=False, index=True)
     reference_image_url = Column(String(500), nullable=True)
     reference_strength = Column(Float, default=0.5, nullable=True)  # 0.0-1.0
+    remove_bg = Column(Boolean, default=True)  # Whether background was removed
     logo_text = Column(String(50), nullable=True)  # Exact text for logo agents
     image_url = Column(String(500), nullable=True)
     thumbnail_url = Column(String(500), nullable=True)
