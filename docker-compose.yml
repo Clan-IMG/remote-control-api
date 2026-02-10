@@ -15,12 +15,12 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,https://pixelkid.app}
-      - UVICORN_WORKERS=${UVICORN_WORKERS:-4}
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-8}
       - STABILITY_API_KEY=${STABILITY_API_KEY}
       - REPLICATE_API_KEY=${REPLICATE_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
-      - MIN_CONTAINERS=${MIN_CONTAINERS:-2}
-      - MAX_CONTAINERS=${MAX_CONTAINERS:-3}
+      - MIN_CONTAINERS=${MIN_CONTAINERS:-4}
+      - MAX_CONTAINERS=${MAX_CONTAINERS:-8}
       - SCALING_THRESHOLD=${SCALING_THRESHOLD:-75}
       - MAXIMUM_REQUESTS=${MAXIMUM_REQUESTS:-200}
     depends_on:
@@ -33,6 +33,12 @@ services:
     volumes:
       - uploads:/app/uploads
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # Worker containers (initial)
   worker-1:
@@ -47,7 +53,7 @@ services:
       - REDIS_PORT=6379
       - STABILITY_API_KEY=${STABILITY_API_KEY}
       - REPLICATE_API_KEY=${REPLICATE_API_KEY}
-      - MAX_CONCURRENT_WORKERS=${MAX_CONCURRENT_WORKERS:-2}
+      - MAX_CONCURRENT_WORKERS=${MAX_CONCURRENT_WORKERS:-4}
     depends_on:
       - api
     networks:

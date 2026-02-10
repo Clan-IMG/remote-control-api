@@ -71,6 +71,15 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+# Response returned after registration to indicate approval requirement or include created user
+class RegistrationResponse(BaseModel):
+    message: str
+    user: Optional[UserResponse] = None
+
+    class Config:
+        from_attributes = True
+
+
 # ========== API Key Schemas ==========
 
 class ApiKeyCreate(BaseModel):

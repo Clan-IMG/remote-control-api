@@ -10,7 +10,7 @@ from src.app.models import User, ApiKey, SystemSetting
 from src.app.schemas import (
     UserRegister, UserLogin, UserResponse, TokenResponse,
     ApiKeyCreate, ApiKeyResponse, ApiKeyCreated, ProfileUpdate,
-    RefreshTokenRequest
+    RefreshTokenRequest, RegistrationResponse
 )
 from src.app.auth import (
     hash_password, authenticate_user, create_access_token, 
@@ -27,7 +27,7 @@ ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5MB
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=RegistrationResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     user_data: UserRegister,
     db: AsyncSession = Depends(get_db)
@@ -71,7 +71,18 @@ async def register(
     await db.commit()
     await db.refresh(user)
     
-    return user
+    # If registrations are closed (private beta), return a friendly message
+    if not login_enabled:
+        return RegistrationResponse(
+            message=f"To get free access, please message WrobelXXL on Discord: https://discord.gg/D9tgwpb65e",
+            user=None
+        )
+
+    # If login is enabled, return the created user
+    return RegistrationResponse(
+        message="Account created",
+        user=user
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -96,7 +107,7 @@ async def login(
     if not user.login_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account requires approval (Private Beta)"
+            detail="To get free access, please message WrobelXXL on Discord: https://discord.gg/D9tgwpb65e"
         )
     
     access_token = create_access_token(user.id)
