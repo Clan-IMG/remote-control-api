@@ -2,13 +2,18 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from src.app.config import DATABASE_URL
 
-# Create async engine with connection pool options to avoid using stale/closed MySQL connections
+# Create async engine with connection pool tuned for multiple uvicorn workers.
+# Each uvicorn worker process forks and creates its OWN pool, so keep
+# pool_size moderate per process.  With 8 workers × pool_size=5 = 40 conns.
+# MySQL default max_connections=151, so this fits comfortably.
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
-    pool_pre_ping=True,    # ping connections before use
-    pool_recycle=3600,    # recycle connections older than 1h
-    pool_timeout=30       # wait up to 30s for a connection from the pool
+    pool_pre_ping=True,       # test connections before checkout (heals stale conns)
+    pool_recycle=300,          # recycle connections every 5 min (shorter than MySQL wait_timeout)
+    pool_timeout=10,           # don't block long waiting for a pool slot
+    pool_size=5,               # connections kept open per worker process
+    max_overflow=5,            # extra connections allowed when pool is full
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
