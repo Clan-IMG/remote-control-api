@@ -24,3 +24,5 @@ QUEUE_FAILED = "pixelkid:queue:failed"
 KEY_REQUEST_PREFIX = "pixelkid:request:"
 KEY_CONTAINER_STATUS = "pixelkid:containers:status"
 KEY_CONTAINER_LOAD = "pixelkid:containers:load"
+# Sorted set to track processing start times (score = epoch seconds)
+KEY_PROCESSING_TIMES = "pixelkid:processing:times"

@@ -21,8 +21,16 @@ MAX_CONTAINERS = int(os.getenv("MAX_CONTAINERS", 3))
 SCALING_THRESHOLD = int(os.getenv("SCALING_THRESHOLD", 75))  # Prozent
 MAXIMUM_REQUESTS = int(os.getenv("MAXIMUM_REQUESTS", 200))  # Pro Container
 
+# Scaler lookahead: how many seconds to project queue growth for proactive scaling
+SCALING_LOOKAHEAD_SECONDS = int(os.getenv("SCALING_LOOKAHEAD_SECONDS", 60))
+# When projected queue exceeds this fraction of total capacity, scale up
+SCALING_PROJECTED_UTILIZATION = float(os.getenv("SCALING_PROJECTED_UTILIZATION", 0.8))
+
 # ========== Concurrent Workers ==========
 MAX_CONCURRENT_WORKERS = int(os.getenv("MAX_CONCURRENT_WORKERS", 2))
+
+# How long (seconds) a job is considered "processing" before it's considered stale
+PROCESSING_TIMEOUT = int(os.getenv("PROCESSING_TIMEOUT", 600))  # 10 minutes
 
 # ========== AI Configuration ==========
 # Multiple API keys can be provided separated by comma for redundancy

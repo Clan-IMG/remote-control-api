@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import uuid
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -18,7 +19,7 @@ from src.app.config import (
 from src.app.redis_client import (
     get_redis, QUEUE_PENDING, QUEUE_PROCESSING, 
     QUEUE_COMPLETED, QUEUE_FAILED, KEY_REQUEST_PREFIX,
-    KEY_CONTAINER_STATUS, KEY_CONTAINER_LOAD
+    KEY_CONTAINER_STATUS, KEY_CONTAINER_LOAD, KEY_PROCESSING_TIMES
 )
 from src.app.database import async_session
 from src.app.models import Generation, PublicGallery, RequestStatus, ModelType
@@ -180,6 +181,26 @@ async def worker_loop():
     logger.info(f"Worker {CONTAINER_ID} started")
     
     active_tasks = 0
+    # Start background requeue task for stale processing items
+    async def requeue_stale():
+        from src.app.config import PROCESSING_TIMEOUT
+        while True:
+            try:
+                now = time.time()
+                cutoff = now - PROCESSING_TIMEOUT
+                stale = await redis.zrangebyscore(KEY_PROCESSING_TIMES, 0, cutoff)
+                for req_id in stale:
+                    # Attempt to remove from processing list; if removed, push back to pending
+                    removed = await redis.lrem(QUEUE_PROCESSING, 1, req_id)
+                    if removed:
+                        await redis.lpush(QUEUE_PENDING, req_id)
+                        await redis.zrem(KEY_PROCESSING_TIMES, req_id)
+                        logger.warning(f"Requeued stale request {req_id}")
+            except Exception as e:
+                logger.error(f"Requeue stale task error: {e}")
+            await asyncio.sleep(60)
+
+    asyncio.create_task(requeue_stale())
     
     try:
         while True:
@@ -204,6 +225,11 @@ async def worker_loop():
                 continue
             
             request_data = json.loads(request_json)
+            # Mark processing start time in sorted set for requeueing if worker dies
+            try:
+                await redis.zadd(KEY_PROCESSING_TIMES, {request_id: time.time()})
+            except Exception:
+                logger.warning(f"Failed to set processing time for {request_id}")
             active_tasks += 1
             
             # Update load
@@ -220,6 +246,11 @@ async def worker_loop():
                     target_queue = QUEUE_COMPLETED if success else QUEUE_FAILED
                     await redis.lrem(QUEUE_PROCESSING, 1, req_id)
                     await redis.lpush(target_queue, req_id)
+                    # Remove from processing timestamp set
+                    try:
+                        await redis.zrem(KEY_PROCESSING_TIMES, req_id)
+                    except Exception:
+                        pass
                     
                 finally:
                     active_tasks -= 1

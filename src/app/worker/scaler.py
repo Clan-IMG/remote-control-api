@@ -7,6 +7,8 @@ import asyncio
 import logging
 import docker
 from typing import Optional
+from collections import deque
+import time
 
 from src.app.config import (
     MIN_CONTAINERS, MAX_CONTAINERS, 
@@ -25,6 +27,8 @@ class ContainerScaler:
         self.docker_client = docker.from_env()
         self.worker_image = "pixelkid-worker:latest"
         self.network_name = "pixelkid-network"
+        # queue history for growth projection: deque of (timestamp, depth)
+        self.queue_history: deque[tuple[float, int]] = deque(maxlen=10)
     
     async def get_queue_depth(self) -> int:
         """Get number of pending requests"""
@@ -80,6 +84,9 @@ class ContainerScaler:
         current_count = len(running)
         queue_depth = await self.get_queue_depth()
         loads = await self.get_container_loads()
+        now = time.time()
+        # record history for projection
+        self.queue_history.append((now, queue_depth))
         
         # Calculate average load
         avg_load = sum(loads.values()) / len(loads) if loads else 0
@@ -90,11 +97,25 @@ class ContainerScaler:
         )
         
         # Scale up conditions
+        # Proactive scale-up using projected queue growth
+        from src.app.config import SCALING_LOOKAHEAD_SECONDS, SCALING_PROJECTED_UTILIZATION
+
+        projected_queue = queue_depth
+        # Use linear growth estimate if we have at least two samples
+        if len(self.queue_history) >= 2:
+            t0, q0 = self.queue_history[0]
+            t1, q1 = self.queue_history[-1]
+            dt = max(1.0, t1 - t0)
+            growth_per_sec = (q1 - q0) / dt
+            projected_queue = max(0, int(queue_depth + growth_per_sec * SCALING_LOOKAHEAD_SECONDS))
+
+        total_capacity = max(1, current_count * MAXIMUM_REQUESTS)
+
         should_scale_up = (
             current_count < MAX_CONTAINERS and
             (
                 avg_load >= SCALING_THRESHOLD or
-                queue_depth > current_count * MAXIMUM_REQUESTS * 0.5
+                projected_queue > total_capacity * SCALING_PROJECTED_UTILIZATION
             )
         )
         
@@ -106,8 +127,17 @@ class ContainerScaler:
         )
         
         if should_scale_up:
-            logger.info("Scaling up: starting new worker")
-            self.start_worker_container()
+            # Calculate how many workers to add to cover projected_queue
+            needed = 0
+            if projected_queue > total_capacity:
+                deficit = projected_queue - total_capacity
+                needed = (deficit + MAXIMUM_REQUESTS - 1) // MAXIMUM_REQUESTS
+
+            # Ensure we don't exceed MAX_CONTAINERS
+            to_start = min(needed if needed > 0 else 1, MAX_CONTAINERS - current_count)
+            logger.info(f"Scaling up: starting {to_start} worker(s) (projected_queue={projected_queue}, capacity={total_capacity})")
+            for _ in range(to_start):
+                self.start_worker_container()
             
         elif should_scale_down:
             # Find container with lowest load
