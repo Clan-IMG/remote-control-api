@@ -121,7 +121,8 @@ async def process_generation(request_data: dict) -> bool:
                 target_size=request_data.get("size", "16x16"),
                 provider=request_data.get("provider", "auto"),
                 reference_image=reference_image_bytes,
-                reference_strength=reference_strength
+                reference_strength=reference_strength,
+                remove_bg=request_data.get("remove_bg", True)
             )
             
             if result.success:

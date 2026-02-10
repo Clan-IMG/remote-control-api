@@ -613,7 +613,8 @@ async def generate_pixel_art(
     target_size: str = "16x16",
     provider: str = "auto",
     reference_image: Optional[bytes] = None,
-    reference_strength: Optional[float] = 0.5
+    reference_strength: Optional[float] = 0.5,
+    remove_bg: bool = True
 ) -> GenerationResult:
     """
     Main generation function.
@@ -629,6 +630,7 @@ async def generate_pixel_art(
         provider: AI provider to use ("auto", "stability", "openai")
         reference_image: Optional reference image bytes for img2img
         reference_strength: How strongly to follow the reference (0.0-1.0)
+        remove_bg: Whether to remove background and make transparent
     """
     import time
     start_time = time.time()
@@ -767,7 +769,8 @@ async def generate_pixel_art(
         pixel_art_data = downscale_to_pixel_art(
             result.image_data,
             target_width,
-            target_height
+            target_height,
+            remove_bg=remove_bg
         )
         
         processing_time = int((time.time() - start_time) * 1000)

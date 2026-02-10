@@ -115,6 +115,7 @@ class GenerationRequest(BaseModel):
     provider: AIProviderEnum = AIProviderEnum.AUTO  # AI provider selection
     reference_image_url: Optional[str] = None  # URL of uploaded reference image
     reference_strength: float = Field(default=0.5, ge=0.0, le=1.0)  # How much to follow the reference
+    remove_bg: bool = True  # Whether to remove background (make transparent)
 
 
 class GenerationResponse(BaseModel):

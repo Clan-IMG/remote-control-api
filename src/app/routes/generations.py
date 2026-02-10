@@ -127,6 +127,7 @@ async def create_generation(
         "provider": request.provider.value,
         "reference_image_url": request.reference_image_url,
         "reference_strength": request.reference_strength if request.reference_image_url else None,
+        "remove_bg": request.remove_bg,
         "created_at": datetime.utcnow().isoformat()
     }
     
