@@ -50,6 +50,7 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str] = None
     is_active: bool
     is_verified: bool
+    is_admin: bool = False
     created_at: datetime
 
     class Config:
