@@ -375,16 +375,30 @@ async def generate_with_stability(
                     logger.info(f"Stability API key {i + 1} succeeded")
                     return GenerationResult(success=True, image_data=image_data, provider_used="stability")
                 
-                # Check if it's a balance error
-                error_msg = f"Stability API error: {response.text}"
+                # Parse error details for better logging
+                try:
+                    error_detail = response.json()
+                    error_name = error_detail.get("name", "unknown")
+                    error_message = error_detail.get("message", response.text[:500])
+                except Exception:
+                    error_name = "unknown"
+                    error_message = response.text[:500]
+                
+                error_msg = f"Stability API error (HTTP {response.status_code}, {error_name}): {error_message}"
                 last_error = error_msg
                 
                 if response.status_code == 429:
-                    logger.warning(f"Stability API key {i + 1} failed (insufficient balance or rate limit): {response.text}")
-                    continue  # Try next key
+                    logger.warning(f"Stability API key {i + 1} rate limited / insufficient balance: {error_message}")
+                elif response.status_code == 400:
+                    # Content moderation or invalid prompt - log full details but try next key/provider
+                    logger.warning(f"Stability API key {i + 1} rejected request (400): {error_message}")
+                elif response.status_code == 403:
+                    logger.warning(f"Stability API key {i + 1} permission denied (403): {error_message}")
                 else:
-                    logger.warning(error_msg)
-                    return GenerationResult(success=False, error_message=error_msg)
+                    logger.warning(f"Stability API key {i + 1} failed ({response.status_code}): {error_message}")
+                
+                # Always try next key instead of returning immediately
+                continue
                 
         except Exception as e:
             last_error = str(e)
