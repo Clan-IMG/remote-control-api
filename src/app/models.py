@@ -61,6 +61,7 @@ class ApiKey(Base):
     key_hash = Column(String(255), nullable=False, unique=True)
     key_prefix = Column(String(20), nullable=False)  # pk_xxxx for display
     name = Column(String(100), nullable=False)
+    allowed_host = Column(String(255), nullable=False)  # whitelisted host/origin
     is_active = Column(Boolean, default=True)
     last_used_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)

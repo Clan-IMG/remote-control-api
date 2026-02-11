@@ -258,7 +258,17 @@ async def create_api_key(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new API key"""
+    """Create a new API key (max 5 per user)"""
+    # Check limit
+    existing = await db.execute(
+        select(ApiKey).where(ApiKey.user_id == current_user.id)
+    )
+    if len(existing.scalars().all()) >= 5:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum of 5 API keys reached"
+        )
+    
     full_key, key_hash, key_prefix = generate_api_key()
     
     expires_at = None
@@ -270,6 +280,7 @@ async def create_api_key(
         key_hash=key_hash,
         key_prefix=key_prefix,
         name=key_data.name,
+        allowed_host=key_data.allowed_host,
         expires_at=expires_at
     )
     db.add(api_key)
@@ -280,6 +291,7 @@ async def create_api_key(
         id=api_key.id,
         key_prefix=api_key.key_prefix,
         name=api_key.name,
+        allowed_host=api_key.allowed_host,
         is_active=api_key.is_active,
         last_used_at=api_key.last_used_at,
         expires_at=api_key.expires_at,

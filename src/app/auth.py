@@ -94,7 +94,7 @@ async def get_user_by_id(db: AsyncSession, user_id: str) -> Optional[User]:
 
 
 async def get_user_by_api_key(db: AsyncSession, api_key: str) -> Optional[User]:
-    """Get user by API key"""
+    """Get user by API key (no host check)"""
     key_hash = hash_api_key(api_key)
     result = await db.execute(
         select(ApiKey)
@@ -109,6 +109,40 @@ async def get_user_by_api_key(db: AsyncSession, api_key: str) -> Optional[User]:
     # Check expiration
     if api_key_obj.expires_at and api_key_obj.expires_at < datetime.utcnow():
         return None
+    
+    # Update last used
+    api_key_obj.last_used_at = datetime.utcnow()
+    await db.commit()
+    
+    return await get_user_by_id(db, api_key_obj.user_id)
+
+
+async def get_user_by_api_key_with_host_check(db: AsyncSession, api_key: str, request_origin: str):
+    """Get user by API key with host whitelist check.
+    Returns User on success, None if key invalid, 'host_denied' if host mismatch.
+    """
+    key_hash = hash_api_key(api_key)
+    result = await db.execute(
+        select(ApiKey)
+        .where(ApiKey.key_hash == key_hash)
+        .where(ApiKey.is_active == True)
+    )
+    api_key_obj = result.scalar_one_or_none()
+    
+    if not api_key_obj:
+        return None
+    
+    # Check expiration
+    if api_key_obj.expires_at and api_key_obj.expires_at < datetime.utcnow():
+        return None
+    
+    # Check allowed host
+    allowed = api_key_obj.allowed_host.strip().lower() if api_key_obj.allowed_host else ""
+    if allowed and allowed != "*":
+        origin_lower = request_origin.lower()
+        # Check if the allowed host appears in the origin/referer/host header
+        if allowed not in origin_lower:
+            return "host_denied"
     
     # Update last used
     api_key_obj.last_used_at = datetime.utcnow()

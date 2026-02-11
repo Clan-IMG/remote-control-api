@@ -85,6 +85,7 @@ class RegistrationResponse(BaseModel):
 
 class ApiKeyCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    allowed_host: str = Field(..., min_length=1, max_length=255)
     expires_in_days: Optional[int] = None  # None = never expires
 
 
@@ -92,6 +93,7 @@ class ApiKeyResponse(BaseModel):
     id: str
     key_prefix: str
     name: str
+    allowed_host: str
     is_active: bool
     last_used_at: Optional[datetime]
     expires_at: Optional[datetime]
