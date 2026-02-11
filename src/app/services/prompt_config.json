@@ -4,28 +4,28 @@
     "model_prompts": {
         "block-agent": {
             "base": "minecraft block texture, 2D front view, flat design, pixel art style, seamless tileable texture, {user_prompt}, clean edges, no gradients, game asset, isolated on pure white background, solid white background",
-            "negative": "3d, perspective, shading, gradient, blurry, noise, realistic, photo, complex details, text, watermark, signature, transparent, checkered background, gray background",
+            "negative": "3d, perspective, shading, gradient, blurry, noise, realistic, photo, complex details, text, watermark, signature, checkered background, gray background",
             "steps": 30,
             "cfg_scale": 7,
             "enhance_prompt": false
         },
         "item-agent": {
             "base": "single isolated {user_prompt} icon, Minecraft style, 16-bit pixel art, pixelated, 2D flat vector, sprite sheet style, sharp jagged pixel edges, high contrast, vibrant colors, pure white background, centered, no background scenery, item focus, masterpiece",
-            "negative": "blurry, soft edges, gradient, 3D, realistic, shadow, border, frame, merged with background, messy pixels, multiple items, distorted shape, landscape, complex scene, transparent, checkered background, gray background",
+            "negative": "blurry, soft edges, gradient, 3D, realistic, shadow, border, frame, merged with background, messy pixels, multiple items, distorted shape, landscape, complex scene, checkered background, gray background",
             "steps": 25,
             "cfg_scale": 9.5,
             "enhance_prompt": true
         },
         "armor-agent": {
             "base": "minecraft armor piece, pixel art sprite, bit style, {user_prompt}, front facing, flat colors, clean edges, game character equipment, isolated on pure white background, solid white background",
-            "negative": "3d, realistic, photo, gradient, blur, complex details, text, watermark, background scenery, transparent, checkered background, gray background",
+            "negative": "3d, realistic, photo, gradient, blur, complex details, text, watermark, background scenery, checkered background, gray background",
             "steps": 30,
             "cfg_scale": 7,
             "enhance_prompt": false
         },
         "prompt-agent": {
             "base": "{user_prompt}, Minecraft style, 16-bit pixel art, pixelated, clean pixel edges, flat colors, vibrant colors, pure white background, solid white background",
-            "negative": "blurry, soft edges, gradient, 3D, realistic, shadow, messy pixels, distorted, transparent, checkered background, gray background",
+            "negative": "blurry, soft edges, gradient, 3D, realistic, shadow, messy pixels, distorted, checkered background, gray background",
             "steps": 25,
             "cfg_scale": 8,
             "enhance_prompt": true
