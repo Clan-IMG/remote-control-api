@@ -113,10 +113,10 @@ services:
     image: mysql:8.0
     container_name: pixelkid-db
     environment:
-      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-rootpassword}
+      - MYSQL_ROOT_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
       - MYSQL_DATABASE=pixelkid
       - MYSQL_USER=pixelkid
-      - MYSQL_PASSWORD=${DB_PASSWORD:-pixelkid123}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
     # Ports nur für lokale Entwicklung - in Produktion entfernen
     # ports:
     #   - "3306:3306"
@@ -162,6 +162,8 @@ services:
     environment:
       - PMA_HOST=db
       - PMA_PORT=3306
+      - PMA_USER=root
+      - PMA_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
       - UPLOAD_LIMIT=64M
     depends_on:
       - db
