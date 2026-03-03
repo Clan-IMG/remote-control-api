@@ -164,7 +164,7 @@ services:
       - PMA_HOST=db
       - PMA_PORT=3306
       - PMA_USER=root
-      - PMA_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
+      - PMA_PASSWORD=rootpassword
     depends_on:
       - db
     networks:
