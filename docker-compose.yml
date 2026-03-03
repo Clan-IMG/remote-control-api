@@ -5,9 +5,6 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: pixelkid-api
-    # Port-Mapping wird von Coolify/Traefik gehandhabt
-    # ports:
-    #   - "8000:8000"
     expose:
       - "8000"
     environment:
@@ -83,32 +80,6 @@ services:
       - uploads:/app/uploads
     restart: unless-stopped
 
-  # Container Scaler - DEAKTIVIERT für Coolify
-  # Der Scaler braucht Docker-Socket-Zugriff, was in managed Umgebungen nicht möglich ist.
-  # Für manuelle Skalierung: Container-Replicas in Coolify konfigurieren.
-  # scaler:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.worker
-  #   container_name: pixelkid-scaler
-  #   command: ["python", "-m", "src.app.worker.scaler"]
-  #   environment:
-  #     - DATABASE_URL=mysql+aiomysql://pixelkid:${DB_PASSWORD}@db:3306/pixelkid
-  #     - REDIS_HOST=redis
-  #     - REDIS_PORT=6379
-  #     - MIN_CONTAINERS=${MIN_CONTAINERS:-2}
-  #     - MAX_CONTAINERS=${MAX_CONTAINERS:-3}
-  #     - SCALING_THRESHOLD=${SCALING_THRESHOLD:-75}
-  #     - MAXIMUM_REQUESTS=${MAXIMUM_REQUESTS:-200}
-  #   depends_on:
-  #     - api
-  #   networks:
-  #     - pixelkid-network
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #   restart: unless-stopped
-
-  # MySQL Database
   db:
     image: mysql:8.0
     container_name: pixelkid-db
@@ -117,10 +88,6 @@ services:
       - MYSQL_DATABASE=pixelkid
       - MYSQL_USER=pixelkid
       - MYSQL_PASSWORD=P8UjXYjlsEnOVXtyk+qdP5S4lHoZj1BnBh+fwlEO2Rg=
-      - DB_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
-    # Ports nur für lokale Entwicklung - in Produktion entfernen
-    # ports:
-    #   - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
@@ -136,6 +103,17 @@ services:
       - --wait-timeout=600
       - --interactive-timeout=600
       - --max-allowed-packet=64M
+
+  # phpMyAdmin
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: pixelkid-phpmyadmin
+    environment: []
+    depends_on:
+      - db
+    networks:
+      - pixelkid-network
+    restart: unless-stopped
 
   # Redis Queue
   redis:
@@ -154,19 +132,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
-
-  # phpMyAdmin
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    container_name: pixelkid-phpmyadmin
-    environment:
-      - PMA_HOST=db
-      - PMA_PORT=3306
-    depends_on:
-      - db
-    networks:
-      - pixelkid-network
     restart: unless-stopped
 
 networks:
