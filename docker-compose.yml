@@ -108,7 +108,9 @@ services:
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     container_name: pixelkid-phpmyadmin
-    environment: []
+    environment:
+      - PMA_USER=root
+      - PMA_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
     depends_on:
       - db
     networks:
