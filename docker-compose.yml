@@ -116,7 +116,8 @@ services:
       - MYSQL_ROOT_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
       - MYSQL_DATABASE=pixelkid
       - MYSQL_USER=pixelkid
-      - MYSQL_PASSWORD=${DB_PASSWORD}
+      - MYSQL_PASSWORD=P8UjXYjlsEnOVXtyk+qdP5S4lHoZj1BnBh+fwlEO2Rg=
+      - DB_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
     # Ports nur für lokale Entwicklung - in Produktion entfernen
     # ports:
     #   - "3306:3306"
@@ -164,7 +165,6 @@ services:
       - PMA_PORT=3306
       - PMA_USER=root
       - PMA_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
-      - UPLOAD_LIMIT=64M
     depends_on:
       - db
     networks:
