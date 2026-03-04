@@ -6,12 +6,12 @@ import os
 import uuid
 import aiofiles
 from src.app.database import get_db
-from src.app.models import User, ApiKey, SystemSetting
+from src.app.models import User, ApiKey, EmailLog, SystemSetting
 from src.app.schemas import (
     UserRegister, UserLogin, UserResponse, TokenResponse,
     ApiKeyCreate, ApiKeyResponse, ApiKeyCreated, ProfileUpdate,
     RefreshTokenRequest, RegistrationResponse,
-    EmailUpdate, AccountDeleteRequest, AccountDeleteResponse,
+    EmailUpdate, ChangePasswordRequest, AccountDeleteRequest, AccountDeleteResponse,
     SendVerificationEmailResponse, VerifyEmailRequest
 )
 from src.app.auth import (
@@ -409,14 +409,7 @@ async def update_email(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update user email address. Requires current password for verification."""
-    # Verify current password
-    if not verify_password(data.current_password, current_user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Incorrect password"
-        )
-
+    """Update user email address."""
     # Check if new email already in use by another account
     if data.email != current_user.email:
         existing = await db.execute(select(User).where(User.email == data.email))
@@ -427,9 +420,29 @@ async def update_email(
             )
 
     current_user.email = data.email
+    current_user.is_verified = False  # re-verification required after email change
     await db.commit()
     await db.refresh(current_user)
     return current_user
+
+
+# ========== Change Password ==========
+
+@router.patch("/password")
+async def change_password(
+    data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Change the user's password. Requires current password for verification."""
+    if not verify_password(data.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Incorrect current password"
+        )
+    current_user.password_hash = hash_password(data.new_password)
+    await db.commit()
+    return {"message": "Password changed successfully"}
 
 
 # ========== Email Verification (OTP) ==========
@@ -437,6 +450,7 @@ async def update_email(
 @router.post("/send-verification", response_model=SendVerificationEmailResponse)
 async def send_verification(
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Send a 6-digit verification OTP to the user's current email address.
     
@@ -470,6 +484,15 @@ async def send_verification(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Failed to send email: {exc}"
         )
+
+    # ── Anonymous usage log (DSGVO-konform: keine personenbezogene Daten) ──
+    db.add(EmailLog(email_type="verification"))
+    # Purge records older than 90 days on every insert (no cron needed)
+    from sqlalchemy import text as sa_text
+    await db.execute(
+        sa_text("DELETE FROM email_log WHERE sent_at < NOW() - INTERVAL 90 DAY")
+    )
+    await db.commit()
 
     return SendVerificationEmailResponse(
         message="Verification code sent. Please check your inbox.",

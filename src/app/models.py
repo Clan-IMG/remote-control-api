@@ -130,3 +130,19 @@ class ModelTemplate(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class EmailLog(Base):
+    """
+    Anonymous email send log for usage analytics.
+
+    DSGVO / GDPR notes:
+    - No personal data stored (no email address, no user_id, no IP).
+    - Records are automatically purged after 90 days on each insert.
+    - Legal basis: legitimate interest in monitoring system health (Art. 6 I f DSGVO).
+    """
+    __tablename__ = "email_log"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    email_type = Column(String(50), nullable=False, index=True)   # e.g. "verification"
+    sent_at    = Column(DateTime, server_default=func.now(), nullable=False, index=True)

@@ -64,7 +64,11 @@ class ProfileUpdate(BaseModel):
 
 class EmailUpdate(BaseModel):
     email: EmailStr
-    current_password: str  # Must verify current password before email change
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8)
 
 
 class AccountDeleteRequest(BaseModel):
