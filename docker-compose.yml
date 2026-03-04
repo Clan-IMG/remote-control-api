@@ -20,6 +20,14 @@ services:
       - MAX_CONTAINERS=${MAX_CONTAINERS:-8}
       - SCALING_THRESHOLD=${SCALING_THRESHOLD:-75}
       - MAXIMUM_REQUESTS=${MAXIMUM_REQUESTS:-200}
+      - SMTP_HOST=mail.techniqstone.net
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=noreply@pixelkid.app
+      - SMTP_PASSWORD=UOKcjt1hsIFJPY0hbUNROaohvyEq7V5nrh3l2dzABN4=
+      - SMTP_FROM_EMAIL=noreply@pixelkid.app
+      - SMTP_FROM_NAME=pixelkid.app
+      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
+      - OTP_TTL_SECONDS=${OTP_TTL_SECONDS:-600}
     depends_on:
       db:
         condition: service_healthy
