@@ -10,15 +10,21 @@ from src.app.models import User, ApiKey, SystemSetting
 from src.app.schemas import (
     UserRegister, UserLogin, UserResponse, TokenResponse,
     ApiKeyCreate, ApiKeyResponse, ApiKeyCreated, ProfileUpdate,
-    RefreshTokenRequest, RegistrationResponse
+    RefreshTokenRequest, RegistrationResponse,
+    EmailUpdate, AccountDeleteRequest, AccountDeleteResponse,
+    SendVerificationEmailResponse, VerifyEmailRequest
 )
 from src.app.auth import (
-    hash_password, authenticate_user, create_access_token, 
+    hash_password, verify_password, authenticate_user, create_access_token, 
     create_refresh_token, generate_api_key, verify_token,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 from src.app.dependencies import get_current_user
-from src.app.config import UPLOAD_DIR
+from src.app.config import UPLOAD_DIR, OTP_TTL_SECONDS
+from src.app.services.email_service import (
+    generate_otp, store_otp, verify_otp, otp_ttl_remaining,
+    send_verification_email,
+)
 
 router = APIRouter(prefix="/v1/auth", tags=["Authentication"])
 
@@ -334,3 +340,164 @@ async def delete_api_key(
     
     await db.delete(api_key)
     await db.commit()
+
+
+# ========== Account Deletion ==========
+
+@router.delete("/account", response_model=AccountDeleteResponse)
+async def schedule_account_deletion(
+    data: AccountDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Schedule account deletion in 30 days. User must confirm with password.
+    
+    All user data (API keys, generations, public gallery entries) will be deleted.
+    The user can revoke within 30 days via DELETE /account/cancel.
+    """
+    # Verify password
+    if not verify_password(data.password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Incorrect password"
+        )
+
+    # If already scheduled, just return the existing date
+    if current_user.deletion_scheduled_at:
+        return AccountDeleteResponse(
+            message="Account deletion already scheduled",
+            deletion_scheduled_at=current_user.deletion_scheduled_at
+        )
+
+    deletion_at = datetime.utcnow() + timedelta(days=30)
+    current_user.deletion_scheduled_at = deletion_at
+    await db.commit()
+    await db.refresh(current_user)
+
+    return AccountDeleteResponse(
+        message=(
+            "Your account and all associated data (API keys, generated images, public gallery entries) "
+            "will be permanently deleted in 30 days. You can cancel this any time before then."
+        ),
+        deletion_scheduled_at=deletion_at
+    )
+
+
+@router.post("/account/cancel-deletion", response_model=UserResponse)
+async def cancel_account_deletion(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Cancel a scheduled account deletion."""
+    if not current_user.deletion_scheduled_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No account deletion is scheduled"
+        )
+
+    current_user.deletion_scheduled_at = None
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
+
+
+# ========== Email Update ==========
+
+@router.patch("/email", response_model=UserResponse)
+async def update_email(
+    data: EmailUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update user email address. Requires current password for verification."""
+    # Verify current password
+    if not verify_password(data.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Incorrect password"
+        )
+
+    # Check if new email already in use by another account
+    if data.email != current_user.email:
+        existing = await db.execute(select(User).where(User.email == data.email))
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already in use"
+            )
+
+    current_user.email = data.email
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
+
+
+# ========== Email Verification (OTP) ==========
+
+@router.post("/send-verification", response_model=SendVerificationEmailResponse)
+async def send_verification(
+    current_user: User = Depends(get_current_user),
+):
+    """Send a 6-digit verification OTP to the user's current email address.
+    
+    Rate-limited via OTP TTL: if an unexpired code already exists the remaining
+    seconds are returned without re-sending.
+    """
+    if current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email is already verified"
+        )
+
+    # Check if a code was already sent recently (avoid spam)
+    remaining = await otp_ttl_remaining(current_user.id)
+    if remaining > 0:
+        return SendVerificationEmailResponse(
+            message="A verification code was already sent. Please check your inbox.",
+            expires_in_seconds=remaining,
+        )
+
+    code = generate_otp()
+    await store_otp(current_user.id, code)
+
+    try:
+        await send_verification_email(current_user.email, current_user.username, code)
+    except Exception as exc:
+        # Roll back stored OTP so user can retry immediately
+        from src.app.redis_client import redis_client
+        await redis_client.delete(f"pixelkid:otp:{current_user.id}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to send email: {exc}"
+        )
+
+    return SendVerificationEmailResponse(
+        message="Verification code sent. Please check your inbox.",
+        expires_in_seconds=OTP_TTL_SECONDS,
+    )
+
+
+@router.post("/verify-email", response_model=UserResponse)
+async def verify_email(
+    data: VerifyEmailRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify the user's email with the 6-digit OTP."""
+    if current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email is already verified"
+        )
+
+    valid = await verify_otp(current_user.id, data.code)
+    if not valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification code"
+        )
+
+    current_user.is_verified = True
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user

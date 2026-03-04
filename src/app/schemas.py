@@ -51,6 +51,7 @@ class UserResponse(BaseModel):
     is_active: bool
     is_verified: bool
     is_admin: bool = False
+    deletion_scheduled_at: Optional[datetime] = None
     created_at: datetime
 
     class Config:
@@ -59,6 +60,29 @@ class UserResponse(BaseModel):
 
 class ProfileUpdate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
+
+
+class EmailUpdate(BaseModel):
+    email: EmailStr
+    current_password: str  # Must verify current password before email change
+
+
+class AccountDeleteRequest(BaseModel):
+    password: str  # Must confirm with current password
+
+
+class AccountDeleteResponse(BaseModel):
+    message: str
+    deletion_scheduled_at: datetime
+
+
+class SendVerificationEmailResponse(BaseModel):
+    message: str
+    expires_in_seconds: int
+
+
+class VerifyEmailRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=6, pattern=r'^\d{6}$')
 
 
 class TokenResponse(BaseModel):

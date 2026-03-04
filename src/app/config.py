@@ -48,3 +48,15 @@ S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
 # ========== JWT / Auth ==========
 JWT_SECRET = os.getenv("JWT_SECRET", "your-super-secret-jwt-key-change-in-production")
 API_KEY_PREFIX = os.getenv("API_KEY_PREFIX", "pk_")
+
+# ========== Email (SMTP) ==========
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "noreply@pixelkid.app")
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Pixelkid")
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+
+# OTP TTL in seconds (default 10 minutes)
+OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", 600))
