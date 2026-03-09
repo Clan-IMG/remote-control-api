@@ -1,27 +1,15 @@
-"""
-Health Check Endpoints
-"""
-from datetime import datetime
-from fastapi import APIRouter
-from ..store import store
-from ..models import HealthResponse
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
-router = APIRouter(tags=["Health"])
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+        else:
+            self.send_response(404)
+            self.end_headers()
 
-
-@router.get("/health", response_model=HealthResponse)
-async def health():
-    """Health-Check mit Status-Infos"""
-    plugins = await store.get_all_plugins()
-    return HealthResponse(
-        status="ok",
-        version="1.0.0",
-        plugins_registered=len(plugins),
-        active_sessions=0  # Sessions werden jetzt in DB gezählt
-    )
-
-
-@router.get("/")
-def root():
-    """Root Endpoint"""
-    return {"message": "Permission API", "version": "1.0.0"}
+def start_health_server():
+    server = HTTPServer(("0.0.0.0", 3000), HealthHandler)
+    server.serve_forever()

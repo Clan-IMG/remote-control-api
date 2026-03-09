@@ -1,154 +1,50 @@
 services:
-  # Main API
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: pixelkid-api
+    container_name: api-template
     expose:
       - "8000"
-    environment:
-      - DATABASE_URL=mysql+aiomysql://pixelkid:${DB_PASSWORD}@db:3306/pixelkid
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,https://pixelkid.app}
-      - UVICORN_WORKERS=${UVICORN_WORKERS:-4}
-      - STABILITY_API_KEY=${STABILITY_API_KEY}
-      - REPLICATE_API_KEY=${REPLICATE_API_KEY}
-      - JWT_SECRET=${JWT_SECRET}
-      - MIN_CONTAINERS=${MIN_CONTAINERS:-4}
-      - MAX_CONTAINERS=${MAX_CONTAINERS:-8}
-      - SCALING_THRESHOLD=${SCALING_THRESHOLD:-75}
-      - MAXIMUM_REQUESTS=${MAXIMUM_REQUESTS:-200}
-      - SMTP_HOST=mail.techniqstone.net
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USERNAME=noreply@pixelkid.app
-      - SMTP_PASSWORD=UOKcjt1hsIFJPY0hbUNROaohvyEq7V5nrh3l2dzABN4=
-      - SMTP_FROM_EMAIL=noreply@pixelkid.app
-      - SMTP_FROM_NAME=pixelkid.app
-      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
-      - OTP_TTL_SECONDS=${OTP_TTL_SECONDS:-600}
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    environment: []
     networks:
-      - pixelkid-network
-    volumes:
-      - uploads:/app/uploads
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
-  # Worker containers (initial)
-  worker-1:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    container_name: pixelkid-worker-1
-    environment:
-      - CONTAINER_ID=worker-1
-      - DATABASE_URL=mysql+aiomysql://pixelkid:${DB_PASSWORD}@db:3306/pixelkid
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - STABILITY_API_KEY=${STABILITY_API_KEY}
-      - REPLICATE_API_KEY=${REPLICATE_API_KEY}
-      - MAX_CONCURRENT_WORKERS=${MAX_CONCURRENT_WORKERS:-4}
-    depends_on:
-      - api
-    networks:
-      - pixelkid-network
-    volumes:
-      - uploads:/app/uploads
+      - network
     restart: unless-stopped
 
-  worker-2:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    container_name: pixelkid-worker-2
-    environment:
-      - CONTAINER_ID=worker-2
-      - DATABASE_URL=mysql+aiomysql://pixelkid:${DB_PASSWORD}@db:3306/pixelkid
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - STABILITY_API_KEY=${STABILITY_API_KEY}
-      - REPLICATE_API_KEY=${REPLICATE_API_KEY}
-      - MAX_CONCURRENT_WORKERS=${MAX_CONCURRENT_WORKERS:-2}
-    depends_on:
-      - api
-    networks:
-      - pixelkid-network
-    volumes:
-      - uploads:/app/uploads
-    restart: unless-stopped
+#  mariadb:
+#    image: mysql:8.0
+#    container_name: mariadb
+#    environment:
+#      - MYSQL_ROOT_PASSWORD=password
+#      - MYSQL_DATABASE=db
+#      - MYSQL_USER=user
+#      - MYSQL_PASSWORD=password
+#    volumes:
+#      - mysql_data:/var/lib/mysql
+#    networks:
+#      - network
+#    restart: unless-stopped
+#    command:
+#      - --max-connections=200
+#      - --wait-timeout=600
+#      - --interactive-timeout=600
+#      - --max-allowed-packet=64M
 
-  db:
-    image: mysql:8.0
-    container_name: pixelkid-db
-    environment:
-      - MYSQL_ROOT_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
-      - MYSQL_DATABASE=pixelkid
-      - MYSQL_USER=pixelkid
-      - MYSQL_PASSWORD=P8UjXYjlsEnOVXtyk+qdP5S4lHoZj1BnBh+fwlEO2Rg=
-    volumes:
-      - mysql_data:/var/lib/mysql
-    networks:
-      - pixelkid-network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    command:
-      - --max-connections=200
-      - --wait-timeout=600
-      - --interactive-timeout=600
-      - --max-allowed-packet=64M
-
-  # phpMyAdmin
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    container_name: pixelkid-phpmyadmin
-    environment:
-      - PMA_USER=root
-      - PMA_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
-    depends_on:
-      - db
-    networks:
-      - pixelkid-network
-    restart: unless-stopped
-
-  # Redis Queue
-  redis:
-    image: redis:7-alpine
-    container_name: pixelkid-redis
-    command: redis-server --appendonly yes
-    # Ports nur für lokale Entwicklung - in Produktion entfernen
-    # ports:
-    #   - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - pixelkid-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+#  phpmyadmin:
+#    image: phpmyadmin/phpmyadmin
+#    container_name: phpmyadmin
+#    environment:
+#      - PMA_USER=root
+#      - PMA_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
+#    depends_on:
+#      - mariadb
+#    networks:
+#      - network
+#    restart: unless-stopped
 
 networks:
-  pixelkid-network:
+  network:
     driver: bridge
 
-volumes:
-  mysql_data:
-  redis_data:
-  uploads:
+# volumes:
+#  mysql_data:
