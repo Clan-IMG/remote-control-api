@@ -38,7 +38,8 @@ async def token_checker(request: Request, call_next):
         raise HTTPException(status_code=401, detail="Invalid or missing token")
     return await call_next(request)
 
-app.include_router(health_router, prefix="/health", tags=["health"])
+# /health
+app.include_router(health_router, tags=["health"])
 
 @app.get("/")
 def root():
