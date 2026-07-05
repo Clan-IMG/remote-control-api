@@ -6,7 +6,9 @@ services:
     container_name: api-template
     expose:
       - "8000"
-    environment: []
+    environment:
+      - API_TOKEN=${API_TOKEN}
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-2}
     networks:
       - network
     restart: unless-stopped
@@ -15,27 +17,22 @@ services:
 #    image: mysql:8.0
 #    container_name: mariadb
 #    environment:
-#      - MYSQL_ROOT_PASSWORD=password
-#      - MYSQL_DATABASE=db
-#      - MYSQL_USER=user
-#      - MYSQL_PASSWORD=password
+#      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+#      - MYSQL_DATABASE=${MYSQL_DATABASE}
+#      - MYSQL_USER=${MYSQL_USER}
+#      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
 #    volumes:
 #      - mysql_data:/var/lib/mysql
 #    networks:
 #      - network
 #    restart: unless-stopped
-#    command:
-#      - --max-connections=200
-#      - --wait-timeout=600
-#      - --interactive-timeout=600
-#      - --max-allowed-packet=64M
 
 #  phpmyadmin:
 #    image: phpmyadmin/phpmyadmin
 #    container_name: phpmyadmin
 #    environment:
-#      - PMA_USER=root
-#      - PMA_PASSWORD=Fmg7MTQ+Qy7cVS0XuftNxXOY59GJ8Hh3jmoyMOtxkpg=
+#      - PMA_USER=${PMA_USER}
+#      - PMA_PASSWORD=${PMA_PASSWORD}
 #    depends_on:
 #      - mariadb
 #    networks:

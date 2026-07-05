@@ -1,8 +1,6 @@
-import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException
-import os
+from fastapi import FastAPI, Request
 
 logging.basicConfig(
     level=logging.INFO,
@@ -11,14 +9,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from src.app.health.main import router as health_router
+from src.app.auth import verify_bearer_token
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting API...")
     yield
-    
+
     logger.info("Shutting down...")
-    await redis_client.close()
 
 app = FastAPI(
     title="API",
@@ -33,9 +31,7 @@ async def token_checker(request: Request, call_next):
     public_paths = ["/health"]
     if any(request.url.path.startswith(p) for p in public_paths):
         return await call_next(request)
-    token = request.headers.get("Authorization", "")
-    if not token.startswith("Bearer ") or token.replace("Bearer ", "") != API_TOKEN:
-        raise HTTPException(status_code=401, detail="Invalid or missing token")
+    verify_bearer_token(request)
     return await call_next(request)
 
 # /health
