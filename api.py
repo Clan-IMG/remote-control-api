@@ -1,6 +1,8 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,7 +33,10 @@ async def token_checker(request: Request, call_next):
     public_paths = ["/health"]
     if any(request.url.path.startswith(p) for p in public_paths):
         return await call_next(request)
-    verify_bearer_token(request)
+    try:
+        verify_bearer_token(request)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     return await call_next(request)
 
 # /health
