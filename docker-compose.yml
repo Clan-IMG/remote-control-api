@@ -35,8 +35,8 @@ services:
     environment:
       - PMA_HOST=${PMA_HOST:-mariadb}
       - PMA_PORT=${PMA_PORT:-3306}
-      - PMA_USER=${MARIADB_USER}
-      - PMA_PASSWORD=${MARIADB_PASSWORD}
+      - PMA_USER=${PMA_USER}
+      - PMA_PASSWORD=${PMA_PASSWORD}
     depends_on:
       - mariadb
     networks:
