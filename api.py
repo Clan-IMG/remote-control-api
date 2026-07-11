@@ -8,8 +8,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from src.app.health.main import router as health_router
-from src.app.auth import verify_bearer_token
+from app.health.main import router as health_router
+from app.auth import verify_bearer_token
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
