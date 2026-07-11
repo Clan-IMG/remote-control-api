@@ -1,7 +1,5 @@
 services:
   api:
-    labels:
-      - traefik.docker.network=coolify
     build:
       context: .
       dockerfile: Dockerfile
@@ -12,7 +10,6 @@ services:
       - UVICORN_WORKERS=${UVICORN_WORKERS:-2}
     networks:
       - network
-      - coolify
     restart: unless-stopped
 
   mariadb:
@@ -29,8 +26,6 @@ services:
     restart: unless-stopped
 
   phpmyadmin:
-    labels:
-      - traefik.docker.network=coolify
     image: phpmyadmin/phpmyadmin
     environment:
       - PMA_HOST=${PMA_HOST:-mariadb}
@@ -41,14 +36,11 @@ services:
       - mariadb
     networks:
       - network
-      - coolify
     restart: unless-stopped
 
 networks:
   network:
     driver: bridge
-  coolify:
-    external: true
 
 volumes:
   mysql_data:
