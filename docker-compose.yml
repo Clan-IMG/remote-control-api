@@ -1,7 +1,7 @@
 services:
   api:
     labels:
-    - traefik.docker.network=coolify
+      - traefik.docker.network=coolify
     build:
       context: .
       dockerfile: Dockerfile
