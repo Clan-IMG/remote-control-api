@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi import HTTPException
@@ -19,8 +20,23 @@ from app.ping.router import router as ping_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Docker depends_on does not wait for DB readiness. Retry startup DB connect
+    # to avoid crash loops when MariaDB is still booting.
+    last_error: Exception | None = None
+    for attempt in range(1, 31):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            last_error = None
+            break
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Database not ready on startup (attempt %s/30): %r", attempt, exc)
+            if attempt < 30:
+                await asyncio.sleep(2)
+    if last_error is not None:
+        raise last_error
+
     logger.info("Starting API...")
     yield
 
