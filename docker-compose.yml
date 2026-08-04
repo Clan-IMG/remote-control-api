@@ -39,7 +39,7 @@ services:
       - traefik.docker.network=coolify
     image: phpmyadmin/phpmyadmin
     environment:
-      - PMA_HOST=${PMA_HOST:-mariadb}
+      - PMA_HOST=${PMA_HOST:-rc-db}
       - PMA_PORT=${PMA_PORT:-3306}
       - PMA_USER=${PMA_USER}
       - PMA_PASSWORD=${PMA_PASSWORD}
