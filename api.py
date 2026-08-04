@@ -12,12 +12,18 @@ logger = logging.getLogger(__name__)
 
 from app.health.main import router as health_router
 from app.auth import verify_bearer_token
+from app.database import engine, Base
+import app.pay.models  # register ORM models
+from app.pay.router import router as pay_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     logger.info("Starting API...")
     yield
 
+    await engine.dispose()
     logger.info("Shutting down...")
 
 app = FastAPI(
@@ -41,6 +47,9 @@ async def token_checker(request: Request, call_next):
 
 # /health
 app.include_router(health_router, tags=["health"])
+
+# /v1/pay
+app.include_router(pay_router, tags=["pay"])
 
 @app.get("/")
 def root():
