@@ -30,6 +30,12 @@ services:
       - mysql_data:/var/lib/mysql
     networks:
       - network
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$$MARIADB_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
     restart: unless-stopped
 
   phpmyadmin:
