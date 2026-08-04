@@ -10,7 +10,7 @@ services:
     environment:
       - API_TOKEN=${API_TOKEN}
       - UVICORN_WORKERS=${UVICORN_WORKERS:-2}
-      - DATABASE_URL=mysql+aiomysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb:3306/${MARIADB_DATABASE}
+      - DATABASE_URL=mysql+aiomysql://${MARIADB_USER}:${MARIADB_PASSWORD}@rc-db:3306/${MARIADB_DATABASE}
       - CLANIMG_API_URL=${CLANIMG_API_URL:-}
     depends_on:
       - mariadb
@@ -29,10 +29,14 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
-      - network
+      network:
+        aliases:
+          - rc-db
     restart: unless-stopped
 
   phpmyadmin:
+    labels:
+      - traefik.docker.network=coolify
     image: phpmyadmin/phpmyadmin
     environment:
       - PMA_HOST=${PMA_HOST:-mariadb}
@@ -43,6 +47,7 @@ services:
       - mariadb
     networks:
       - network
+      - coolify
     restart: unless-stopped
 
 networks:
