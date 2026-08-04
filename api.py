@@ -15,6 +15,7 @@ from app.auth import verify_bearer_token
 from app.database import engine, Base
 import app.pay.models  # register ORM models
 from app.pay.router import router as pay_router
+from app.ping.router import router as ping_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -50,6 +51,9 @@ app.include_router(health_router, tags=["health"])
 
 # /v1/pay
 app.include_router(pay_router, tags=["pay"])
+
+# /v1/ping
+app.include_router(ping_router, tags=["ping"])
 
 @app.get("/")
 def root():

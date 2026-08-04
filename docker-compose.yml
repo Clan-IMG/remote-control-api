@@ -11,6 +11,7 @@ services:
       - API_TOKEN=${API_TOKEN}
       - UVICORN_WORKERS=${UVICORN_WORKERS:-2}
       - DATABASE_URL=mysql+aiomysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb:3306/${MARIADB_DATABASE}
+      - CLANIMG_API_URL=${CLANIMG_API_URL:-}
     depends_on:
       - mariadb
     networks:
