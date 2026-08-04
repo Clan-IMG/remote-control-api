@@ -29,17 +29,13 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
-      network:
-        aliases:
-          - rc-db
+      - network
     restart: unless-stopped
 
   phpmyadmin:
-    labels:
-      - traefik.docker.network=coolify
     image: phpmyadmin/phpmyadmin
     environment:
-      - PMA_HOST=${PMA_HOST:-rc-db}
+      - PMA_HOST=${PMA_HOST:-mariadb}
       - PMA_PORT=${PMA_PORT:-3306}
       - PMA_USER=${PMA_USER}
       - PMA_PASSWORD=${PMA_PASSWORD}
@@ -47,7 +43,6 @@ services:
       - mariadb
     networks:
       - network
-      - coolify
     restart: unless-stopped
 
 networks:
