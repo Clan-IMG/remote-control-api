@@ -1,13 +1,16 @@
 import uuid
 from decimal import Decimal
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.pay.models import Payment
 
 router = APIRouter(prefix="/v1/pay")
+
+CLAIM_EXPIRY_MINUTES = 5
 
 
 class PayRequest(BaseModel):
@@ -35,8 +38,20 @@ async def create_payment(data: PayRequest, db: AsyncSession = Depends(get_db)):
 
 @router.get("/pending")
 async def get_pending(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Payment).where(Payment.status == "pending"))
+    expiry = datetime.utcnow() - timedelta(minutes=CLAIM_EXPIRY_MINUTES)
+    result = await db.execute(
+        select(Payment)
+        .where(
+            Payment.status == "pending",
+            or_(Payment.claimed_at.is_(None), Payment.claimed_at < expiry)
+        )
+        .with_for_update()
+    )
     payments = result.scalars().all()
+    now = datetime.utcnow()
+    for p in payments:
+        p.claimed_at = now
+    await db.commit()
     return [{"id": p.id, "name": p.name, "amount": float(p.amount)} for p in payments]
 
 

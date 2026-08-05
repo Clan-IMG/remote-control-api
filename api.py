@@ -17,6 +17,7 @@ from app.database import engine, Base
 import app.pay.models  # register ORM models
 from app.pay.router import router as pay_router
 from app.ping.router import router as ping_router
+from sqlalchemy import text
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,6 +28,9 @@ async def lifespan(app: FastAPI):
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                await conn.execute(text(
+                    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS claimed_at DATETIME NULL"
+                ))
             last_error = None
             break
         except Exception as exc:

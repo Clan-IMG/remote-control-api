@@ -11,3 +11,4 @@ class Payment(Base):
     amount = Column(Numeric(18, 2), nullable=False)
     status = Column(Enum("pending", "done"), nullable=False, default="pending")
     created_at = Column(DateTime, server_default=func.now())
+    claimed_at = Column(DateTime, nullable=True, default=None)
