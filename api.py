@@ -31,6 +31,15 @@ async def lifespan(app: FastAPI):
                 await conn.execute(text(
                     "ALTER TABLE payments ADD COLUMN IF NOT EXISTS claimed_at DATETIME NULL"
                 ))
+                await conn.execute(text(
+                    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS external_id VARCHAR(64) NULL"
+                ))
+                await conn.execute(text(
+                    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS fail_reason VARCHAR(255) NULL"
+                ))
+                await conn.execute(text(
+                    "ALTER TABLE payments MODIFY COLUMN status ENUM('pending','done','failed') NOT NULL DEFAULT 'pending'"
+                ))
             last_error = None
             break
         except Exception as exc:
