@@ -94,14 +94,43 @@ async def get_pending(db: AsyncSession = Depends(get_db)):
 
 
 
+async def _notify_clanimg(external_id: str, status: str, reject_reason: str | None) -> None:
+    """Reports the final /pay outcome back to api.clan-img.net so the payout request
+    (created optimistically as 'processing') is resolved to its real status."""
+    clanimg_url = os.getenv("CLANIMG_API_URL", "").rstrip("/")
+    clanimg_token = os.getenv("CLANIMG_API_TOKEN", "")
+    if not clanimg_url:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.patch(
+                f"{clanimg_url}/team-space/payout-requests/{external_id}",
+                json={
+                    "status": status,
+                    "reject_reason": reject_reason,
+                    "handled_by_discord_id": "system",
+                    "handled_by_name": "Remote-Control-API",
+                },
+                headers={"X-API-Token": clanimg_token} if clanimg_token else {},
+            )
+    except Exception:
+        pass
+
+
 @router.post("/{payment_id}/done")
 async def mark_done(payment_id: str, db: AsyncSession = Depends(get_db)):
+    """Mod confirms the /pay command actually succeeded (saw the server's success chat message) —
+    resolves the corresponding payout request in api.clan-img.net to 'paid'."""
     result = await db.execute(select(Payment).where(Payment.id == payment_id))
     payment = result.scalar_one_or_none()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
     payment.status = "done"
     await db.commit()
+
+    if payment.external_id:
+        await _notify_clanimg(payment.external_id, "paid", None)
+
     return {"ok": True}
 
 
@@ -118,22 +147,6 @@ async def mark_failed(payment_id: str, data: PayFailRequest, db: AsyncSession = 
     await db.commit()
 
     if payment.external_id:
-        clanimg_url = os.getenv("CLANIMG_API_URL", "").rstrip("/")
-        clanimg_token = os.getenv("CLANIMG_API_TOKEN", "")
-        if clanimg_url:
-            try:
-                async with httpx.AsyncClient(timeout=10) as client:
-                    await client.patch(
-                        f"{clanimg_url}/team-space/payout-requests/{payment.external_id}",
-                        json={
-                            "status": "rejected",
-                            "reject_reason": data.reason,
-                            "handled_by_discord_id": "system",
-                            "handled_by_name": "Remote-Control-API",
-                        },
-                        headers={"X-API-Token": clanimg_token} if clanimg_token else {},
-                    )
-            except Exception:
-                pass
+        await _notify_clanimg(payment.external_id, "rejected", data.reason)
 
     return {"ok": True}
