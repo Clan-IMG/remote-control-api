@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Numeric, Enum, DateTime, Integer, func
+from sqlalchemy import Column, String, Numeric, Enum, DateTime, Integer, Boolean, func
 from app.database import Base
 
 
@@ -16,6 +16,10 @@ class Payment(Base):
     fail_reason = Column(String(255), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     claimed_at = Column(DateTime, nullable=True, default=None)
+    # False until _notify_clanimg's callback (which flips the payout to paid/rejected and, for
+    # 'paid', creates the Buchhalter entry) has actually succeeded — a background retry loop
+    # keeps retrying rows stuck at False so a transient network failure can't strand a payout.
+    notified = Column(Boolean, nullable=False, default=False)
 
 
 class PollerHeartbeat(Base):

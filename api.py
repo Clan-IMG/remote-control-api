@@ -13,11 +13,26 @@ logger = logging.getLogger(__name__)
 
 from app.health.main import router as health_router
 from app.auth import verify_bearer_token
-from app.database import engine, Base
+from app.database import engine, Base, async_session
 import app.pay.models  # register ORM models
-from app.pay.router import router as pay_router
+from app.pay.router import router as pay_router, retry_unnotified_payments
 from app.ping.router import router as ping_router
 from sqlalchemy import text
+
+# How often to retry api.clan-img.net callbacks for payments that resolved (done/failed) but
+# whose notify never succeeded (e.g. api.clan-img.net was briefly unreachable).
+NOTIFY_RETRY_INTERVAL_SECONDS = 30
+
+
+async def _notify_retry_loop() -> None:
+    while True:
+        await asyncio.sleep(NOTIFY_RETRY_INTERVAL_SECONDS)
+        try:
+            async with async_session() as db:
+                await retry_unnotified_payments(db)
+        except Exception as exc:
+            logger.warning("Notify retry loop iteration failed: %r", exc)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -38,6 +53,9 @@ async def lifespan(app: FastAPI):
                     "ALTER TABLE payments ADD COLUMN IF NOT EXISTS fail_reason VARCHAR(255) NULL"
                 ))
                 await conn.execute(text(
+                    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS notified BOOLEAN NOT NULL DEFAULT FALSE"
+                ))
+                await conn.execute(text(
                     "ALTER TABLE payments MODIFY COLUMN status ENUM('pending','done','failed') NOT NULL DEFAULT 'pending'"
                 ))
             last_error = None
@@ -51,8 +69,10 @@ async def lifespan(app: FastAPI):
         raise last_error
 
     logger.info("Starting API...")
+    retry_task = asyncio.create_task(_notify_retry_loop())
     yield
 
+    retry_task.cancel()
     await engine.dispose()
     logger.info("Shutting down...")
 

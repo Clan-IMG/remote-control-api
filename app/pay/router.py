@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 import httpx
@@ -11,6 +12,7 @@ from app.database import get_db
 from app.pay.models import Payment, PollerHeartbeat
 
 router = APIRouter(prefix="/v1/pay")
+logger = logging.getLogger(__name__)
 
 CLAIM_EXPIRY_MINUTES = 5
 
@@ -94,16 +96,18 @@ async def get_pending(db: AsyncSession = Depends(get_db)):
 
 
 
-async def _notify_clanimg(external_id: str, status: str, reject_reason: str | None) -> None:
+async def _notify_clanimg(external_id: str, status: str, reject_reason: str | None) -> bool:
     """Reports the final /pay outcome back to api.clan-img.net so the payout request
-    (created optimistically as 'processing') is resolved to its real status."""
+    (created optimistically as 'processing') is resolved to its real status — this is also
+    what triggers the automatic Buchhalter entry on the 'paid' transition. Returns whether the
+    callback actually succeeded so the caller can retry later instead of silently giving up."""
     clanimg_url = os.getenv("CLANIMG_API_URL", "").rstrip("/")
     clanimg_token = os.getenv("CLANIMG_API_TOKEN", "")
     if not clanimg_url:
-        return
+        return False
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            await client.patch(
+            resp = await client.patch(
                 f"{clanimg_url}/team-space/payout-requests/{external_id}",
                 json={
                     "status": status,
@@ -113,8 +117,13 @@ async def _notify_clanimg(external_id: str, status: str, reject_reason: str | No
                 },
                 headers={"X-API-Token": clanimg_token} if clanimg_token else {},
             )
-    except Exception:
-        pass
+            if resp.status_code >= 400:
+                logger.warning("_notify_clanimg failed for external_id=%s status=%s: HTTP %s %s", external_id, status, resp.status_code, resp.text)
+                return False
+            return True
+    except Exception as exc:
+        logger.warning("_notify_clanimg failed for external_id=%s status=%s: %r", external_id, status, exc)
+        return False
 
 
 @router.post("/{payment_id}/done")
@@ -129,7 +138,8 @@ async def mark_done(payment_id: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     if payment.external_id:
-        await _notify_clanimg(payment.external_id, "paid", None)
+        payment.notified = await _notify_clanimg(payment.external_id, "paid", None)
+        await db.commit()
 
     return {"ok": True}
 
@@ -147,6 +157,22 @@ async def mark_failed(payment_id: str, data: PayFailRequest, db: AsyncSession = 
     await db.commit()
 
     if payment.external_id:
-        await _notify_clanimg(payment.external_id, "rejected", data.reason)
+        payment.notified = await _notify_clanimg(payment.external_id, "rejected", data.reason)
+        await db.commit()
 
     return {"ok": True}
+
+
+async def retry_unnotified_payments(db: AsyncSession) -> None:
+    """Safety net for the background loop in api.py: retries the api.clan-img.net callback for any
+    resolved payment that never got a successful notify (e.g. api.clan-img.net was briefly down),
+    so a transient failure can't permanently strand a payout in 'processing' with no Buchhalter entry."""
+    result = await db.execute(
+        select(Payment).where(Payment.status.in_(("done", "failed")), Payment.notified.is_(False), Payment.external_id.isnot(None))
+    )
+    for payment in result.scalars().all():
+        status = "paid" if payment.status == "done" else "rejected"
+        reason = payment.fail_reason if payment.status == "failed" else None
+        if await _notify_clanimg(payment.external_id, status, reason):
+            payment.notified = True
+    await db.commit()
