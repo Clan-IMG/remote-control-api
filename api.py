@@ -21,7 +21,7 @@ from sqlalchemy import text
 
 # How often to retry api.clan-img.net callbacks for payments that resolved (done/failed) but
 # whose notify never succeeded (e.g. api.clan-img.net was briefly unreachable).
-NOTIFY_RETRY_INTERVAL_SECONDS = 30
+NOTIFY_RETRY_INTERVAL_SECONDS = 15
 
 
 async def _notify_retry_loop() -> None:

@@ -106,7 +106,9 @@ async def _notify_clanimg(external_id: str, status: str, reject_reason: str | No
     if not clanimg_url:
         return False
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        # Generous timeout — the target domain can be slow to respond on a cold connection,
+        # and a spurious timeout here just means one more silently-missed payout confirmation.
+        async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.patch(
                 f"{clanimg_url}/team-space/payout-requests/{external_id}",
                 json={
