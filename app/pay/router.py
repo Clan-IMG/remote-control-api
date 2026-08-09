@@ -41,6 +41,13 @@ async def _is_poller_online(db: AsyncSession) -> bool:
     return (datetime.utcnow() - heartbeat.last_seen_at) <= timedelta(seconds=POLLER_ONLINE_THRESHOLD_SECONDS)
 
 
+@router.get("/online")
+async def get_poller_online(db: AsyncSession = Depends(get_db)):
+    """Public status check for external watchdogs (e.g. rc-payout-watchdog) — reports whether
+    the Fabric mod is currently polling, based on the same heartbeat used to gate /v1/pay/."""
+    return {"online": await _is_poller_online(db)}
+
+
 @router.post("/")
 async def create_payment(data: PayRequest, db: AsyncSession = Depends(get_db)):
     if not await _is_poller_online(db):
