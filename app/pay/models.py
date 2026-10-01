@@ -9,10 +9,16 @@ class Payment(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(100), nullable=False)
     amount = Column(Numeric(18, 2), nullable=False)
-    status = Column(Enum("pending", "done", "failed"), nullable=False, default="pending")
+    # pending     -> queued, handed out by /pending
+    # executing   -> the mod called /start and is about to send (or sent) /pay - never handed out again
+    # unconfirmed -> outcome unknown (old mod's "no reply within 3 s"), needs a manual /done or /fail
+    status = Column(Enum("pending", "executing", "unconfirmed", "done", "failed"), nullable=False, default="pending")
     # id of the corresponding team_payout_requests row in api.clan-img.net, used to report
     # back a failure (e.g. target player offline) so the payout can be reverted there.
-    external_id = Column(String(64), nullable=True)
+    external_id = Column(String(64), nullable=True, index=True)
+    # Token the mod sent with /start - a repeat /start with the same token is the same attempt
+    executor_token = Column(String(64), nullable=True)
+    started_at = Column(DateTime, nullable=True)
     fail_reason = Column(String(255), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     claimed_at = Column(DateTime, nullable=True, default=None)

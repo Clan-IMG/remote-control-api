@@ -15,7 +15,7 @@ from app.health.main import router as health_router
 from app.auth import verify_bearer_token
 from app.database import engine, Base, async_session
 import app.pay.models  # register ORM models
-from app.pay.router import router as pay_router, retry_unnotified_payments
+from app.pay.router import router as pay_router, retry_unnotified_payments, LEGACY_UNKNOWN_OUTCOME_LIKE
 from app.ping.router import router as ping_router
 from sqlalchemy import text
 
@@ -56,8 +56,28 @@ async def lifespan(app: FastAPI):
                     "ALTER TABLE payments ADD COLUMN IF NOT EXISTS notified BOOLEAN NOT NULL DEFAULT FALSE"
                 ))
                 await conn.execute(text(
-                    "ALTER TABLE payments MODIFY COLUMN status ENUM('pending','done','failed') NOT NULL DEFAULT 'pending'"
+                    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS executor_token VARCHAR(64) NULL"
                 ))
+                await conn.execute(text(
+                    "ALTER TABLE payments ADD COLUMN IF NOT EXISTS started_at DATETIME NULL"
+                ))
+                await conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_payments_external_id ON payments (external_id)"
+                ))
+                await conn.execute(text(
+                    "ALTER TABLE payments MODIFY COLUMN status ENUM('pending','executing','unconfirmed','done','failed') NOT NULL DEFAULT 'pending'"
+                ))
+                # The old mod reported "no reply within 3 s" as a failure although the /pay may
+                # have gone through. Rows like that whose callback never landed (all Immomarkt
+                # ones - their callback URL was wrong) must not be auto-refunded by the retry
+                # loop now that it can reach them: park them for a manual check instead.
+                await conn.execute(
+                    text(
+                        "UPDATE payments SET status='unconfirmed' "
+                        "WHERE status='failed' AND notified = FALSE AND fail_reason LIKE :reason"
+                    ),
+                    {"reason": LEGACY_UNKNOWN_OUTCOME_LIKE},
+                )
             last_error = None
             break
         except Exception as exc:
